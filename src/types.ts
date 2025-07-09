@@ -39,3 +39,10 @@ export interface ErrorResponse {
   error: string;
   details?: string | undefined;
 }
+
+export interface StructuredTaskResponse {
+  tasks: Array<{
+    id: number;
+    task: string;
+  }>;
+}

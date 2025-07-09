@@ -3,7 +3,7 @@ import cors from "cors";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
 import Joi from "joi";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import dotenv from "dotenv";
 import {
   Task,
@@ -12,6 +12,7 @@ import {
   HealthCheckResponse,
   ModelsResponse,
   ErrorResponse,
+  StructuredTaskResponse,
 } from "./types";
 
 // Load environment variables
@@ -168,25 +169,41 @@ app.post(
       const { text } = value;
       console.log("Received text for task generation:", text);
 
-      // Get Gemini model - using the latest version
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+      // Get Gemini model with structured output configuration
+      const model = genAI.getGenerativeModel({
+        model: "gemini-2.5-pro",
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: SchemaType.OBJECT,
+            properties: {
+              tasks: {
+                type: SchemaType.ARRAY,
+                items: {
+                  type: SchemaType.OBJECT,
+                  properties: {
+                    id: { type: SchemaType.NUMBER },
+                    task: { type: SchemaType.STRING },
+                  },
+                  required: ["id", "task"],
+                },
+              },
+            },
+            required: ["tasks"],
+          },
+        },
+      });
 
       // Craft the prompt for task extraction
-      const prompt = `You are a hyper-efficient AI assistant. Your sole function is to analyze the user's command and extract all identifiable tasks. You must return these tasks in a valid JSON array of objects. Each object must contain a unique 'id' (a random number or timestamp) and a 'task' string. Do not add any conversational text or explanations to your response.
+      const prompt = `You are a hyper-efficient AI assistant. Your sole function is to analyze the user's command and extract all identifiable tasks.
 
-If the user's command doesn't contain any clear tasks (e.g., just greetings, testing, or unclear requests), return an empty array [].
+Analyze the following user command and extract all identifiable tasks. Return them in a JSON object with a "tasks" array. Each task should have a unique numeric id and a clear task description.
+
+If the user's command doesn't contain any clear tasks (e.g., just greetings, testing, or unclear requests), return an empty tasks array.
 
 User command: "${text}"
 
-Your response must be only the JSON output. Example format:
-[
-  {"id": 1720532709001, "task": "Email the team about the new project"},
-  {"id": 1720532709002, "task": "Buy a birthday cake for Sarah"}
-]
-
-If no clear tasks are found, return: []
-
-Return only the JSON array, no other text:`;
+Extract all tasks and return them in the specified JSON format.`;
 
       // Generate response
       const result = await model.generateContent(prompt);
@@ -195,16 +212,22 @@ Return only the JSON array, no other text:`;
       console.log("Gemini response for task generation:", generatedText);
 
       try {
-        // Parse the JSON response
-        const tasks = JSON.parse(generatedText) as Task[];
-        console.log("Parsed tasks:", tasks);
+        // Parse the structured JSON response
+        const parsedResponse = JSON.parse(
+          generatedText
+        ) as StructuredTaskResponse;
+        console.log("Parsed structured response:", parsedResponse);
+
+        // Extract tasks from the structured response
+        const tasks = parsedResponse.tasks || [];
+        console.log("Extracted tasks:", tasks);
 
         // Validate the response format
         if (!Array.isArray(tasks)) {
-          throw new Error("Response is not an array");
+          throw new Error("Tasks is not an array");
         }
 
-        // Ensure each task has the required fields
+        // Ensure each task has the required fields and add completed property
         const validatedTasks: Task[] = tasks.map((task, index) => ({
           id: task.id || Date.now() + index,
           task: task.task || "Untitled task",
@@ -214,7 +237,11 @@ Return only the JSON array, no other text:`;
         console.log("Validated tasks:", validatedTasks);
         res.json(validatedTasks);
       } catch (parseError) {
-        console.error("Failed to parse Gemini response:", generatedText);
+        console.error(
+          "Failed to parse Gemini structured response:",
+          generatedText
+        );
+        console.error("Parse error:", parseError);
 
         // Fallback: create a single task from the original text
         const fallbackTasks: Task[] = [
