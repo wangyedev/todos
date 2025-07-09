@@ -12,22 +12,30 @@ const App: React.FC = () => {
   });
 
   const handleTasksGenerated = useCallback((newTasks: Task[]) => {
-    setState((prev) => ({
-      ...prev,
-      tasks: [...prev.tasks, ...newTasks],
-      isLoading: false,
-      error: null,
-    }));
+    setState((prev) => {
+      // Filter out tasks that already exist to prevent duplicates
+      const existingIds = new Set(prev.tasks.map((task) => task.id));
+      const uniqueNewTasks = newTasks.filter(
+        (task) => !existingIds.has(task.id)
+      );
+
+      return {
+        ...prev,
+        tasks: [...prev.tasks, ...uniqueNewTasks],
+        isLoading: false,
+        error: null,
+      };
+    });
   }, []);
 
-  const handleDeleteTask = useCallback((taskId: number) => {
+  const handleDeleteTask = useCallback((taskId: string) => {
     setState((prev) => ({
       ...prev,
       tasks: prev.tasks.filter((task) => task.id !== taskId),
     }));
   }, []);
 
-  const handleToggleTask = useCallback((taskId: number) => {
+  const handleToggleTask = useCallback((taskId: string) => {
     setState((prev) => ({
       ...prev,
       tasks: prev.tasks.map((task) =>

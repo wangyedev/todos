@@ -1,14 +1,21 @@
 import React, { useState, useRef, useCallback } from "react";
-import { AudioRecorderState } from "../types";
+import { AudioRecorderState, StreamingState, Task } from "../types";
+import { apiService } from "../services/api";
 
 interface AudioRecorderProps {
   onAudioSubmit: (audioBlob: Blob) => Promise<void>;
+  onTasksGenerated: (tasks: Task[]) => void;
+  onStreamingUpdate: (streamingState: StreamingState) => void;
   disabled: boolean;
+  useStreaming?: boolean;
 }
 
 const AudioRecorder: React.FC<AudioRecorderProps> = ({
   onAudioSubmit,
+  onTasksGenerated,
+  onStreamingUpdate,
   disabled,
+  useStreaming = true,
 }) => {
   const [state, setState] = useState<AudioRecorderState>({
     isRecording: false,
@@ -18,6 +25,7 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const currentTranscriptionRef = useRef<string>("");
 
   const startRecording = useCallback(async () => {
     try {
@@ -45,7 +53,146 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
         }));
 
         try {
-          await onAudioSubmit(audioBlob);
+          if (useStreaming) {
+            // Use streaming API
+            onStreamingUpdate({
+              isStreaming: true,
+              currentPhase: "processing",
+              transcribedText: "",
+              isTyping: false,
+              statusMessage: "Processing audio...",
+            });
+
+            apiService.transcribeVoiceStream(
+              audioBlob,
+              (message) => {
+                console.log("SSE Message:", message);
+
+                switch (message.type) {
+                  case "status":
+                    onStreamingUpdate({
+                      isStreaming: true,
+                      currentPhase: "processing",
+                      transcribedText: "",
+                      isTyping: false,
+                      statusMessage: message.data.message,
+                    });
+                    break;
+
+                  case "transcription_start":
+                    onStreamingUpdate({
+                      isStreaming: true,
+                      currentPhase: "transcribing",
+                      transcribedText: "",
+                      isTyping: true,
+                      statusMessage: "",
+                    });
+                    break;
+
+                  case "transcription_partial":
+                    currentTranscriptionRef.current = message.data.text;
+                    onStreamingUpdate({
+                      isStreaming: true,
+                      currentPhase: "transcribing",
+                      transcribedText: message.data.text,
+                      isTyping: true,
+                      statusMessage: "",
+                    });
+                    break;
+
+                  case "transcription_complete":
+                    currentTranscriptionRef.current = message.data.text;
+                    onStreamingUpdate({
+                      isStreaming: true,
+                      currentPhase: "transcribing",
+                      transcribedText: message.data.text,
+                      isTyping: false,
+                      statusMessage: "",
+                    });
+                    break;
+
+                  case "task_generation_start":
+                    onStreamingUpdate({
+                      isStreaming: true,
+                      currentPhase: "generating",
+                      transcribedText: currentTranscriptionRef.current,
+                      isTyping: false,
+                      statusMessage: message.data.message,
+                    });
+                    break;
+
+                  case "task_generation_complete":
+                    onTasksGenerated(message.data.tasks);
+                    onStreamingUpdate({
+                      isStreaming: true,
+                      currentPhase: "complete",
+                      transcribedText: "",
+                      isTyping: false,
+                      statusMessage: "",
+                    });
+                    // Hide streaming UI after a short delay
+                    setTimeout(() => {
+                      onStreamingUpdate({
+                        isStreaming: false,
+                        currentPhase: "idle",
+                        transcribedText: "",
+                        isTyping: false,
+                        statusMessage: "",
+                      });
+                    }, 2000);
+                    break;
+
+                  case "error":
+                    onStreamingUpdate({
+                      isStreaming: true,
+                      currentPhase: "error",
+                      transcribedText: "",
+                      isTyping: false,
+                      statusMessage: message.data.message,
+                    });
+                    setTimeout(() => {
+                      onStreamingUpdate({
+                        isStreaming: false,
+                        currentPhase: "idle",
+                        transcribedText: "",
+                        isTyping: false,
+                        statusMessage: "",
+                      });
+                    }, 3000);
+                    break;
+                }
+              },
+              (error) => {
+                console.error("Streaming error:", error);
+                setState((prev) => ({
+                  ...prev,
+                  error: error.message || "Failed to process audio",
+                }));
+                onStreamingUpdate({
+                  isStreaming: true,
+                  currentPhase: "error",
+                  transcribedText: "",
+                  isTyping: false,
+                  statusMessage: error.message || "Failed to process audio",
+                });
+                setTimeout(() => {
+                  onStreamingUpdate({
+                    isStreaming: false,
+                    currentPhase: "idle",
+                    transcribedText: "",
+                    isTyping: false,
+                    statusMessage: "",
+                  });
+                }, 3000);
+              },
+              () => {
+                console.log("Streaming complete");
+              }
+            );
+          } else {
+            // Use original API
+            await onAudioSubmit(audioBlob);
+          }
         } catch (error) {
           setState((prev) => ({
             ...prev,

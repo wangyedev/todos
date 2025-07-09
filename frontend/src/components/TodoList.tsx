@@ -3,8 +3,8 @@ import { Task } from "../types";
 
 interface TodoListProps {
   tasks: Task[];
-  onDeleteTask: (id: number) => void;
-  onToggleTask: (id: number) => void;
+  onDeleteTask: (id: string) => void;
+  onToggleTask: (id: string) => void;
 }
 
 const TodoList: React.FC<TodoListProps> = ({

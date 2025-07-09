@@ -3,8 +3,9 @@ import cors from "cors";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
 import Joi from "joi";
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import { v4 as uuidv4 } from "uuid";
 import {
   Task,
   GenerateTasksRequest,
@@ -29,12 +30,19 @@ if (!process.env.GOOGLE_AI_API_KEY) {
   process.exit(1);
 }
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY);
+const genAI = new GoogleGenAI({
+  apiKey: process.env.GOOGLE_AI_API_KEY,
+});
 
 // Middleware
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    origin: process.env.FRONTEND_URL || [
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "http://localhost:3002",
+      "http://localhost:5173",
+    ],
     credentials: true,
   })
 );
@@ -99,9 +107,6 @@ app.post(
         return;
       }
 
-      // Get Gemini model for audio transcription
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-
       // Convert audio buffer to base64
       const audioBase64 = req.file.buffer.toString("base64");
 
@@ -112,30 +117,21 @@ app.post(
       const prompt =
         "Please transcribe this audio file accurately. Focus on capturing the speaker's intended meaning, especially any tasks or instructions they mention. Return only the transcribed text, no explanations or additional commentary.";
 
-      // Prepare the request with audio data
-      const request = {
+      // Generate transcription using new API
+      const result = await genAI.models.generateContent({
+        model: "gemini-2.5-flash",
         contents: [
+          prompt,
           {
-            role: "user" as const,
-            parts: [
-              {
-                text: prompt,
-              },
-              {
-                inlineData: {
-                  mimeType: mimeType,
-                  data: audioBase64,
-                },
-              },
-            ],
+            inlineData: {
+              mimeType: mimeType,
+              data: audioBase64,
+            },
           },
         ],
-      };
+      });
 
-      // Generate transcription
-      const result = await model.generateContent(request);
-      const response = await result.response;
-      const transcribedText = response.text().trim();
+      const transcribedText = result.text?.trim() || "";
 
       console.log("transcribedText", transcribedText);
 
@@ -169,31 +165,6 @@ app.post(
       const { text } = value;
       console.log("Received text for task generation:", text);
 
-      // Get Gemini model with structured output configuration
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-pro",
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: SchemaType.OBJECT,
-            properties: {
-              tasks: {
-                type: SchemaType.ARRAY,
-                items: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    id: { type: SchemaType.NUMBER },
-                    task: { type: SchemaType.STRING },
-                  },
-                  required: ["id", "task"],
-                },
-              },
-            },
-            required: ["tasks"],
-          },
-        },
-      });
-
       // Craft the prompt for task extraction
       const prompt = `You are a hyper-efficient AI assistant. Your sole function is to analyze the user's command and extract all identifiable tasks.
 
@@ -205,10 +176,33 @@ User command: "${text}"
 
 Extract all tasks and return them in the specified JSON format.`;
 
-      // Generate response
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const generatedText = response.text();
+      // Generate response using new API
+      const result = await genAI.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "object",
+            properties: {
+              tasks: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "number" },
+                    task: { type: "string" },
+                  },
+                  required: ["id", "task"],
+                },
+              },
+            },
+            required: ["tasks"],
+          },
+        },
+      });
+
+      const generatedText = result.text || "";
       console.log("Gemini response for task generation:", generatedText);
 
       try {
@@ -228,11 +222,13 @@ Extract all tasks and return them in the specified JSON format.`;
         }
 
         // Ensure each task has the required fields and add completed property
-        const validatedTasks: Task[] = tasks.map((task, index) => ({
-          id: task.id || Date.now() + index,
-          task: task.task || "Untitled task",
-          completed: false,
-        }));
+        const validatedTasks: Task[] = tasks.map((task) => {
+          return {
+            id: uuidv4(),
+            task: task.task || "Untitled task",
+            completed: false,
+          };
+        });
 
         console.log("Validated tasks:", validatedTasks);
         res.json(validatedTasks);
@@ -246,7 +242,7 @@ Extract all tasks and return them in the specified JSON format.`;
         // Fallback: create a single task from the original text
         const fallbackTasks: Task[] = [
           {
-            id: Date.now(),
+            id: uuidv4(),
             task: text,
             completed: false,
           },
@@ -257,6 +253,226 @@ Extract all tasks and return them in the specified JSON format.`;
       }
     } catch (error) {
       handleError(res, error, "Failed to generate tasks");
+    }
+  }
+);
+
+// Native streaming voice transcription endpoint
+app.post(
+  "/api/transcribe-voice-stream",
+  upload.single("audio"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: "No audio file provided" });
+        return;
+      }
+
+      console.log(
+        "Streaming transcription request received, file size:",
+        req.file.size
+      );
+
+      // Set SSE headers
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Cache-Control",
+      });
+
+      // Send processing phase
+      res.write(
+        `data: ${JSON.stringify({
+          phase: "processing",
+          message: "Processing audio file...",
+        })}\n\n`
+      );
+
+      // Convert audio to base64
+      const audioBase64 = req.file.buffer.toString("base64");
+
+      // Send transcribing phase
+      res.write(
+        `data: ${JSON.stringify({
+          phase: "transcribing",
+          message: "Transcribing audio with Gemini...",
+        })}\n\n`
+      );
+
+      // Transcribe audio with native streaming
+      const transcriptionResult = await genAI.models.generateContentStream({
+        model: "gemini-2.5-flash",
+        contents: [
+          "Please transcribe this audio accurately. Only return the transcribed text without any additional commentary.",
+          {
+            inlineData: {
+              data: audioBase64,
+              mimeType: req.file.mimetype,
+            },
+          },
+        ],
+      });
+
+      let fullTranscription = "";
+
+      // Stream transcription chunks
+      for await (const chunk of transcriptionResult) {
+        const chunkText = chunk.text;
+        if (chunkText) {
+          fullTranscription += chunkText;
+
+          // Send transcription chunk
+          res.write(
+            `data: ${JSON.stringify({
+              phase: "transcribing",
+              text: chunkText,
+              fullText: fullTranscription,
+            })}\n\n`
+          );
+
+          // Small delay for better UX
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+      }
+
+      if (!fullTranscription.trim()) {
+        res.write(
+          `data: ${JSON.stringify({
+            phase: "error",
+            message: "Could not transcribe audio. Please try again.",
+          })}\n\n`
+        );
+        res.end();
+        return;
+      }
+
+      // Send generating phase
+      res.write(
+        `data: ${JSON.stringify({
+          phase: "generating",
+          message: "Generating tasks from transcription...",
+        })}\n\n`
+      );
+
+      // Generate tasks with native streaming using structured output
+      const taskPrompt = `You are a hyper-efficient AI assistant. Your sole function is to analyze the user's command and extract all identifiable tasks.
+
+Analyze the following user command and extract all identifiable tasks. Return them in a JSON object with a "tasks" array. Each task should have a unique numeric id and a clear task description.
+
+If the user's command doesn't contain any clear tasks (e.g., just greetings, testing, or unclear requests), return an empty tasks array.
+
+User command: "${fullTranscription}"
+
+Extract all tasks and return them in the specified JSON format.`;
+
+      const taskResult = await genAI.models.generateContentStream({
+        model: "gemini-2.5-flash",
+        contents: taskPrompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "object",
+            properties: {
+              tasks: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "number" },
+                    task: { type: "string" },
+                  },
+                  required: ["id", "task"],
+                },
+              },
+            },
+            required: ["tasks"],
+          },
+        },
+      });
+
+      let fullTaskResponse = "";
+
+      // Stream task generation chunks
+      for await (const chunk of taskResult) {
+        const chunkText = chunk.text;
+        if (chunkText) {
+          fullTaskResponse += chunkText;
+
+          // Send task generation chunk
+          res.write(
+            `data: ${JSON.stringify({
+              phase: "generating",
+              text: chunkText,
+              fullText: fullTaskResponse,
+            })}\n\n`
+          );
+
+          // Small delay for better UX
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+      }
+
+      // Parse and validate the final response
+      let tasksData: StructuredTaskResponse;
+      try {
+        // Clean the response (remove any markdown formatting)
+        const cleanResponse = fullTaskResponse
+          .replace(/```json\n?|\n?```/g, "")
+          .trim();
+
+        console.log("Task generation response:", cleanResponse);
+        tasksData = JSON.parse(cleanResponse);
+
+        if (!tasksData.tasks || !Array.isArray(tasksData.tasks)) {
+          throw new Error("Invalid task structure");
+        }
+      } catch (parseError) {
+        console.error("Failed to parse task response:", parseError);
+        console.error("Raw response:", fullTaskResponse);
+        res.write(
+          `data: ${JSON.stringify({
+            phase: "error",
+            message: "Failed to generate tasks. Please try again.",
+          })}\n\n`
+        );
+        res.end();
+        return;
+      }
+
+      // Ensure each task has the required fields and add completed property
+      const validatedTasks: Task[] = tasksData.tasks.map((task, index) => {
+        // Always generate a unique UUID to prevent conflicts
+        const uniqueId = uuidv4();
+        return {
+          id: uniqueId,
+          task: task.task || "Untitled task",
+          completed: false,
+        };
+      });
+
+      console.log("Validated tasks:", validatedTasks);
+
+      // Send completion
+      res.write(
+        `data: ${JSON.stringify({
+          phase: "complete",
+          transcription: fullTranscription,
+          tasks: validatedTasks,
+        })}\n\n`
+      );
+
+      res.end();
+    } catch (error) {
+      console.error("Streaming transcription error:", error);
+      res.write(
+        `data: ${JSON.stringify({
+          phase: "error",
+          message: "An error occurred during transcription. Please try again.",
+        })}\n\n`
+      );
+      res.end();
     }
   }
 );
@@ -282,8 +498,8 @@ app.get(
       const modelsResponse: ModelsResponse = {
         models: [
           {
-            name: "gemini-2.5-pro",
-            displayName: "Gemini 2.5 Pro",
+            name: "gemini-2.5-flash",
+            displayName: "Gemini 2.5 flash",
             supportedGenerationMethods: ["generateContent"],
           },
         ],

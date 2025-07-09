@@ -70,6 +70,151 @@ export const apiService = {
         : new ApiError("Health check failed");
     }
   },
+
+  // New streaming API for real-time transcription and task generation
+  transcribeVoiceStream(
+    audioBlob: Blob,
+    onMessage: (message: { type: string; data: any }) => void,
+    onError: (error: Error) => void,
+    onComplete: () => void
+  ): void {
+    const formData = new FormData();
+    formData.append("audio", audioBlob, "audio.wav");
+
+    let lastTranscription = "";
+
+    fetch(`${API_BASE_URL}/api/transcribe-voice-stream`, {
+      method: "POST",
+      body: formData,
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new ApiError(
+            `Failed to start streaming: ${response.statusText}`,
+            response.status
+          );
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new ApiError("Failed to get response reader");
+        }
+
+        const decoder = new TextDecoder();
+
+        function readStream(): void {
+          reader!
+            .read()
+            .then(({ done, value }) => {
+              if (done) {
+                onComplete();
+                return;
+              }
+
+              const chunk = decoder.decode(value);
+              const lines = chunk.split("\n");
+
+              for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                  try {
+                    const rawData = JSON.parse(line.slice(6));
+
+                    // Transform server message format to frontend expected format
+                    let transformedMessage: { type: string; data: any };
+
+                    switch (rawData.phase) {
+                      case "processing":
+                        transformedMessage = {
+                          type: "status",
+                          data: { message: rawData.message },
+                        };
+                        break;
+
+                      case "transcribing":
+                        if (rawData.text !== undefined) {
+                          // Store the latest transcription
+                          lastTranscription = rawData.fullText || rawData.text;
+
+                          // Partial transcription chunk
+                          transformedMessage = {
+                            type: "transcription_partial",
+                            data: { text: lastTranscription },
+                          };
+                        } else {
+                          // Transcription started
+                          transformedMessage = {
+                            type: "transcription_start",
+                            data: { message: rawData.message },
+                          };
+                        }
+                        break;
+
+                      case "generating":
+                        if (rawData.text !== undefined) {
+                          // Task generation in progress - we can ignore these chunks
+                          continue;
+                        } else {
+                          // Send transcription complete first, then task generation start
+                          onMessage({
+                            type: "transcription_complete",
+                            data: { text: lastTranscription },
+                          });
+
+                          // Task generation started
+                          transformedMessage = {
+                            type: "task_generation_start",
+                            data: { message: rawData.message },
+                          };
+                        }
+                        break;
+
+                      case "complete":
+                        transformedMessage = {
+                          type: "task_generation_complete",
+                          data: {
+                            tasks: rawData.tasks || [],
+                            transcription:
+                              rawData.transcription || lastTranscription,
+                          },
+                        };
+                        break;
+
+                      case "error":
+                        transformedMessage = {
+                          type: "error",
+                          data: { message: rawData.message },
+                        };
+                        break;
+
+                      default:
+                        console.warn("Unknown phase:", rawData.phase);
+                        continue;
+                    }
+
+                    onMessage(transformedMessage);
+                  } catch (error) {
+                    console.error("Failed to parse SSE message:", error);
+                  }
+                }
+              }
+
+              readStream();
+            })
+            .catch((error) => {
+              onError(error);
+            });
+        }
+
+        readStream();
+      })
+      .catch((error) => {
+        onError(
+          error instanceof ApiError
+            ? error
+            : new ApiError("Failed to start streaming")
+        );
+      });
+  },
 };
 
 export { ApiError };

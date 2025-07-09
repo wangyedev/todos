@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from "react";
 import AudioRecorder from "./AudioRecorder";
-import { AgentInteractionState } from "../types";
+import StreamingTranscription from "./StreamingTranscription";
+import { AgentInteractionState, StreamingState } from "../types";
 import { apiService } from "../services/api";
 
 interface AgentInteractionProps {
@@ -16,6 +17,14 @@ const AgentInteraction: React.FC<AgentInteractionProps> = ({
     inputText: "",
     isLoading: false,
     error: null,
+  });
+
+  const [streamingState, setStreamingState] = useState<StreamingState>({
+    isStreaming: false,
+    currentPhase: "idle",
+    transcribedText: "",
+    isTyping: false,
+    statusMessage: "",
   });
 
   const handleTextSubmit = useCallback(
@@ -90,6 +99,13 @@ const AgentInteraction: React.FC<AgentInteractionProps> = ({
     []
   );
 
+  const handleStreamingUpdate = useCallback(
+    (newStreamingState: StreamingState) => {
+      setStreamingState(newStreamingState);
+    },
+    []
+  );
+
   const currentlyLoading = isLoading || state.isLoading;
 
   return (
@@ -138,9 +154,15 @@ const AgentInteraction: React.FC<AgentInteractionProps> = ({
         <div className="voice-input-section">
           <AudioRecorder
             onAudioSubmit={handleAudioSubmit}
+            onTasksGenerated={onTasksGenerated}
+            onStreamingUpdate={handleStreamingUpdate}
             disabled={currentlyLoading}
+            useStreaming={true}
           />
         </div>
+
+        {/* Streaming transcription UI */}
+        <StreamingTranscription streamingState={streamingState} />
       </div>
 
       {state.error && (
