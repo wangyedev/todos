@@ -90,29 +90,36 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
   const isDisabled = disabled || state.isProcessing;
 
   return (
-    <div className="audio-recorder">
+    <div className="text-center">
       <button
         type="button"
         onClick={toggleRecording}
         disabled={isDisabled}
-        className={`recorder-button ${state.isRecording ? "recording" : ""} ${
-          isDisabled ? "disabled" : ""
-        }`}
+        className={`
+          inline-flex items-center gap-4 px-8 py-6 rounded-3xl font-medium text-lg transition-all duration-300 shadow-lg hover:shadow-xl min-w-[200px]
+          ${
+            state.isRecording
+              ? "bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white animate-pulse"
+              : isDisabled
+              ? "bg-white bg-opacity-10 text-white text-opacity-50 cursor-not-allowed"
+              : "bg-gradient-to-r from-green-500 to-cyan-500 hover:from-green-600 hover:to-cyan-600 text-white hover:-translate-y-1"
+          }
+        `}
         aria-label={state.isRecording ? "Stop recording" : "Start recording"}
       >
-        <div className="recorder-icon">
+        <div className="flex items-center justify-center text-2xl">
           {state.isRecording ? (
-            <div className="recording-indicator">
-              <div className="pulse"></div>
-              🎙️
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-red-200 rounded-full animate-pulse"></div>
+              <span>🎙️</span>
             </div>
           ) : state.isProcessing ? (
-            <div className="processing-indicator">⏳</div>
+            <div className="animate-spin">⏳</div>
           ) : (
-            <div className="mic-icon">🎤</div>
+            <span>🎤</span>
           )}
         </div>
-        <span className="recorder-text">
+        <span>
           {state.isRecording
             ? "Stop Recording"
             : state.isProcessing
@@ -122,7 +129,10 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
       </button>
 
       {state.error && (
-        <div className="error-message" role="alert">
+        <div
+          className="mt-4 p-3 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg text-red-200 text-center max-w-md mx-auto"
+          role="alert"
+        >
           {state.error}
         </div>
       )}

@@ -224,8 +224,7 @@ Your response must be only the JSON output...`;
 4. **CORS errors** - Check `FRONTEND_URL` in backend configuration
 5. **Model not found errors** - Try alternative model names:
    - `gemini-2.5-flash` (recommended)
-   - `gemini-1.5-flash`
-   - `gemini-1.5-pro`
+   - `gemini-2.5-pro`
    - Visit `http://localhost:8000/api/models` to see available models
 
 ### Debug Mode
