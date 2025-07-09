@@ -50,14 +50,27 @@ const AgentInteraction: React.FC<AgentInteractionProps> = ({
 
       try {
         // First, transcribe the audio
+        console.log("Starting audio transcription...");
         const transcriptionResult = await apiService.transcribeVoice(audioBlob);
+        console.log("Transcription result:", transcriptionResult);
 
         // Then, generate tasks from the transcribed text
+        console.log("Starting task generation from transcribed text...");
         const tasks = await apiService.generateTasks({
           text: transcriptionResult.text,
         });
-        onTasksGenerated(tasks);
+        console.log("Generated tasks:", tasks);
+
+        if (tasks.length === 0) {
+          setState((prev) => ({
+            ...prev,
+            error: `No tasks could be extracted from: "${transcriptionResult.text}". Please try speaking more clearly about specific tasks you need to complete.`,
+          }));
+        } else {
+          onTasksGenerated(tasks);
+        }
       } catch (error) {
+        console.error("Error in handleAudioSubmit:", error);
         setState((prev) => ({
           ...prev,
           error:

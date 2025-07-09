@@ -23,7 +23,7 @@ A sophisticated full-stack application that acts as an AI-powered agent for task
 ### AI Integration (Google Gemini)
 
 - **Gemini 2.5 Flash** model for task generation
-- **Speech-to-Text** placeholder (requires Google Cloud setup)
+- **Speech-to-Text** using Gemini 2.5 Flash audio capabilities
 - **Prompt engineering** for structured output
 
 ## 🚀 Features
@@ -31,7 +31,7 @@ A sophisticated full-stack application that acts as an AI-powered agent for task
 ### Core Functionality
 
 - ✅ Text input for task generation
-- 🎤 Voice recording (UI ready, transcription needs setup)
+- 🎤 Voice recording and transcription with Gemini 2.5 Flash
 - 🤖 AI-powered task extraction using Gemini 2.5 Flash
 - 📋 Interactive task management (complete/delete)
 - 📱 Responsive design for all devices
@@ -136,12 +136,12 @@ vob/
 3. Click "Generate Tasks" to process with AI
 4. View extracted tasks in the todo list below
 
-### Voice Input (UI Ready)
+### Voice Input
 
 1. Click the "Record Voice" button
 2. Speak your tasks clearly
 3. Click "Stop Recording" when done
-4. **Note:** Audio transcription requires additional Google Cloud setup
+4. Audio will be transcribed by Gemini 2.5 Flash and converted to tasks automatically
 
 ### Task Management
 
@@ -158,17 +158,13 @@ vob/
 2. Create a new API key
 3. Add it to your `.env` file as `GOOGLE_AI_API_KEY`
 
-### Audio Transcription Setup (Optional)
+### Audio Format Support
 
-To enable voice recording functionality:
+Gemini 2.5 Flash supports various audio formats:
 
-1. Set up Google Cloud Speech-to-Text API
-2. Install the Google Cloud Speech client library:
-   ```bash
-   npm install @google-cloud/speech
-   ```
-3. Update the `/api/transcribe-voice` endpoint in `server.js`
-4. Add service account credentials to your environment
+- **Supported formats:** WAV, MP3, FLAC, AAC, OGG, WEBM
+- **Maximum duration:** ~10 minutes per audio file
+- **File size limit:** 10MB per upload
 
 ## 🎯 AI Prompt Engineering
 
@@ -184,10 +180,10 @@ Your response must be only the JSON output...`;
 
 ## 🚨 Known Limitations
 
-1. **Audio Transcription:** Currently shows placeholder - requires Google Cloud Speech-to-Text setup
-2. **Task Persistence:** Tasks are stored in memory only (no database)
-3. **User Authentication:** No user system implemented
-4. **Rate Limiting:** Basic rate limiting implemented
+1. **Task Persistence:** Tasks are stored in memory only (no database)
+2. **User Authentication:** No user system implemented
+3. **Rate Limiting:** Basic rate limiting implemented
+4. **Audio File Size:** Limited to 10MB per audio file
 
 ## 🛡️ Security Features
 
@@ -208,7 +204,6 @@ Your response must be only the JSON output...`;
 
 ## 🔮 Future Enhancements
 
-- [ ] Google Cloud Speech-to-Text integration
 - [ ] Task persistence with database
 - [ ] User authentication and profiles
 - [ ] Task scheduling and reminders
@@ -216,6 +211,8 @@ Your response must be only the JSON output...`;
 - [ ] Team collaboration features
 - [ ] Mobile app version
 - [ ] Offline support with service workers
+- [ ] Support for longer audio files (>10 minutes)
+- [ ] Real-time voice transcription
 
 ## 🐛 Troubleshooting
 

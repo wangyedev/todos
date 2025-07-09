@@ -59,23 +59,47 @@ app.post('/api/transcribe-voice', upload.single('audio'), async (req, res) => {
       return res.status(400).json({ error: 'No audio file provided' });
     }
 
-    // Note: Google's Gemini models don't currently support direct audio transcription
-    // This would typically use Google Cloud Speech-to-Text API
-    // For now, we'll simulate transcription or use a placeholder
+    // Get Gemini model for audio transcription
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    // Convert audio buffer to base64
+    const audioBase64 = req.file.buffer.toString('base64');
     
-    // In a real implementation, you would use:
-    // const speech = require('@google-cloud/speech');
-    // const client = new speech.SpeechClient();
-    
-    // For demonstration, we'll return a placeholder response
-    // In production, replace this with actual speech-to-text implementation
-    
-    res.status(501).json({ 
-      error: 'Audio transcription not implemented',
-      message: 'Please use text input for now. Audio transcription requires Google Cloud Speech-to-Text API setup.'
-    });
+    // Determine MIME type from file buffer or use default
+    const mimeType = req.file.mimetype || 'audio/wav';
+
+    // Create the prompt for transcription
+    const prompt = "Please transcribe this audio file accurately. Focus on capturing the speaker's intended meaning, especially any tasks or instructions they mention. Return only the transcribed text, no explanations or additional commentary.";
+
+    // Prepare the request with audio data
+    const request = {
+      contents: [{
+        role: 'user',
+        parts: [
+          {
+            text: prompt
+          },
+          {
+            inlineData: {
+              mimeType: mimeType,
+              data: audioBase64
+            }
+          }
+        ]
+      }]
+    };
+
+    // Generate transcription
+    const result = await model.generateContent(request);
+    const response = await result.response;
+    const transcribedText = response.text().trim();
+    console.log('transcribedText', transcribedText);
+
+    // Return the transcribed text
+    res.json({ text: transcribedText });
     
   } catch (error) {
+    console.error('Audio transcription error:', error);
     handleError(res, error, 'Failed to transcribe audio');
   }
 });
@@ -90,12 +114,15 @@ app.post('/api/generate-tasks', async (req, res) => {
     }
 
     const { text } = value;
+    console.log('Received text for task generation:', text);
 
     // Get Gemini model - using the latest version
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     // Craft the prompt for task extraction
     const prompt = `You are a hyper-efficient AI assistant. Your sole function is to analyze the user's command and extract all identifiable tasks. You must return these tasks in a valid JSON array of objects. Each object must contain a unique 'id' (a random number or timestamp) and a 'task' string. Do not add any conversational text or explanations to your response.
+
+If the user's command doesn't contain any clear tasks (e.g., just greetings, testing, or unclear requests), return an empty array [].
 
 User command: "${text}"
 
@@ -105,16 +132,20 @@ Your response must be only the JSON output. Example format:
   {"id": 1720532709002, "task": "Buy a birthday cake for Sarah"}
 ]
 
+If no clear tasks are found, return: []
+
 Return only the JSON array, no other text:`;
 
     // Generate response
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const generatedText = response.text();
+    console.log('Gemini response for task generation:', generatedText);
 
     try {
       // Parse the JSON response
       const tasks = JSON.parse(generatedText);
+      console.log('Parsed tasks:', tasks);
       
       // Validate the response format
       if (!Array.isArray(tasks)) {
@@ -128,6 +159,7 @@ Return only the JSON array, no other text:`;
         completed: false
       }));
 
+      console.log('Validated tasks:', validatedTasks);
       res.json(validatedTasks);
 
     } catch (parseError) {
@@ -140,6 +172,7 @@ Return only the JSON array, no other text:`;
         completed: false
       }];
       
+      console.log('Using fallback tasks:', fallbackTasks);
       res.json(fallbackTasks);
     }
 
