@@ -93,9 +93,10 @@ async function generateTasksFromText(inputText: string): Promise<Task[]> {
 
 CRITICAL REQUIREMENTS:
 1. **CREATE ONE TASK GROUP** - Most requests should result in ONE parent task with multiple subtasks
-2. **FOCUSED SUBTASKS** - Break the main goal into 3-5 essential, actionable subtasks (only use more if truly necessary)
-3. **LOGICAL SEQUENCE** - Subtasks should follow a logical workflow from start to finish
-4. **SINGLE FOCUS** - Only create multiple parent tasks if the request contains genuinely distinct, unrelated goals
+2. **NO DUPLICATES** - Never create multiple tasks with the same or similar names/content
+3. **FOCUSED SUBTASKS** - Break the main goal into 3-5 essential, actionable subtasks (only use more if truly necessary)
+4. **LOGICAL SEQUENCE** - Subtasks should follow a logical workflow from start to finish
+5. **SINGLE FOCUS** - Only create multiple parent tasks if the request contains genuinely distinct, unrelated goals
 
 TASK STRUCTURE APPROACH:
 - Identify the main goal from user input
@@ -243,7 +244,10 @@ Output: [
 
 User input: "${inputText}"
 
-IMPORTANT: Create ONE parent task with 3-5 ESSENTIAL subtasks unless the request contains multiple completely unrelated goals.
+IMPORTANT: 
+- Create ONE parent task with 3-5 ESSENTIAL subtasks unless the request contains multiple completely unrelated goals
+- NEVER create duplicate tasks - each task must be unique
+- If you accidentally create similar tasks, only return the best one
 
 Examples of SINGLE task group requests:
 - "Plan a birthday party" → ONE parent task with 4 focused subtasks
@@ -257,6 +261,8 @@ Examples of MULTIPLE task group requests (rare):
 - "Organize office and plan vacation and study for exam" → THREE separate parent tasks
 
 SUBTASK LIMIT: Keep subtasks to 3-5 per parent task. Combine related actions instead of creating many small steps.
+
+FINAL CHECK: Before returning, ensure no duplicate tasks exist in your response.
 
 Return JSON with "tasks" array containing parent task objects with nested subtasks.`;
 
@@ -327,8 +333,16 @@ Return JSON with "tasks" array containing parent task objects with nested subtas
 
   // Validate and format tasks with hierarchical structure
   const validatedTasks: Task[] = [];
+  const seenTasks = new Set<string>(); // Track seen task names for deduplication
 
   parsedResponse.tasks.forEach((task, index) => {
+    // Skip duplicate tasks (case-insensitive comparison)
+    const taskKey = task.task?.toLowerCase().trim();
+    if (!taskKey || seenTasks.has(taskKey)) {
+      console.log(`Skipping duplicate task: ${task.task}`);
+      return;
+    }
+    seenTasks.add(taskKey);
     const now = new Date().toISOString();
     const parentTask: Task = {
       id: uuidv4(),
@@ -377,6 +391,9 @@ Return JSON with "tasks" array containing parent task objects with nested subtas
     validatedTasks.push(parentTask);
   });
 
+  console.log(
+    `Generated ${parsedResponse.tasks.length} tasks, kept ${validatedTasks.length} after deduplication`
+  );
   console.log("Validated tasks:", validatedTasks);
   return validatedTasks;
 }
