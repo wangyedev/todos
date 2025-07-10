@@ -1,7 +1,8 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import AgentInteraction from "./components/AgentInteraction";
 import TodoList from "./components/TodoList";
 import { Task, AppState } from "./types";
+import { apiService } from "./services/api";
 import "./App.css";
 
 const App: React.FC = () => {
@@ -12,6 +13,27 @@ const App: React.FC = () => {
   });
 
   const [activeView, setActiveView] = useState<string>("my-day");
+
+  // Load tasks from database on mount
+  useEffect(() => {
+    const loadTasks = async () => {
+      try {
+        setState((prev) => ({ ...prev, isLoading: true }));
+        const tasks = await apiService.getAllTasks();
+        setState((prev) => ({ ...prev, tasks, isLoading: false }));
+      } catch (error) {
+        console.error("Failed to load tasks:", error);
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error:
+            error instanceof Error ? error.message : "Failed to load tasks",
+        }));
+      }
+    };
+
+    loadTasks();
+  }, []);
 
   const handleTasksGenerated = useCallback((newTasks: Task[]) => {
     setState((prev) => {
@@ -30,97 +52,143 @@ const App: React.FC = () => {
     });
   }, []);
 
-  const handleDeleteTask = useCallback((taskId: string) => {
-    setState((prev) => ({
-      ...prev,
-      tasks: prev.tasks
-        .map((task) => {
-          // If deleting a subtask, remove it from the parent's subtasks array
-          if (task.subtasks) {
-            return {
-              ...task,
-              subtasks: task.subtasks.filter(
-                (subtask) => subtask.id !== taskId
-              ),
-            };
-          }
-          return task;
-        })
-        .filter((task) => task.id !== taskId), // Remove parent tasks
-    }));
+  const handleDeleteTask = useCallback(async (taskId: string) => {
+    try {
+      // Delete from database
+      await apiService.deleteTask(taskId);
+
+      // Update local state
+      setState((prev) => ({
+        ...prev,
+        tasks: prev.tasks
+          .map((task) => {
+            // If deleting a subtask, remove it from the parent's subtasks array
+            if (task.subtasks) {
+              return {
+                ...task,
+                subtasks: task.subtasks.filter(
+                  (subtask) => subtask.id !== taskId
+                ),
+              };
+            }
+            return task;
+          })
+          .filter((task) => task.id !== taskId), // Remove parent tasks
+      }));
+    } catch (error) {
+      console.error("Failed to delete task:", error);
+    }
   }, []);
 
-  const handleToggleTask = useCallback((taskId: string) => {
-    setState((prev) => ({
-      ...prev,
-      tasks: prev.tasks.map((task) => {
-        // If toggling a parent task, toggle all its subtasks
-        if (task.id === taskId) {
-          const newCompleted = !task.completed;
-          return {
-            ...task,
-            completed: newCompleted,
-            subtasks: task.subtasks?.map((subtask) => ({
-              ...subtask,
-              completed: newCompleted,
-            })),
-          };
-        }
+  const handleToggleTask = useCallback(
+    async (taskId: string) => {
+      try {
+        // Find the task being toggled
+        const task = state.tasks.find((t) => t.id === taskId);
+        const subtask = state.tasks
+          .find((t) => t.subtasks?.some((s) => s.id === taskId))
+          ?.subtasks?.find((s) => s.id === taskId);
 
-        // If toggling a subtask, update it within the parent
-        if (task.subtasks) {
-          const updatedSubtasks = task.subtasks.map((subtask) =>
-            subtask.id === taskId
-              ? { ...subtask, completed: !subtask.completed }
-              : subtask
-          );
+        const taskToToggle = task || subtask;
+        if (!taskToToggle) return;
 
-          // Check if this subtask toggle affects the parent
-          const hasUpdatedSubtask = task.subtasks.some((s) => s.id === taskId);
-          if (hasUpdatedSubtask) {
-            return {
-              ...task,
-              subtasks: updatedSubtasks,
-            };
-          }
-        }
+        // Update in database
+        await apiService.updateTaskCompletion(taskId, !taskToToggle.completed);
 
-        return task;
-      }),
-    }));
+        // Update local state
+        setState((prev) => ({
+          ...prev,
+          tasks: prev.tasks.map((task) => {
+            // If toggling a parent task, toggle all its subtasks
+            if (task.id === taskId) {
+              const newCompleted = !task.completed;
+              return {
+                ...task,
+                completed: newCompleted,
+                subtasks: task.subtasks?.map((subtask) => ({
+                  ...subtask,
+                  completed: newCompleted,
+                })),
+              };
+            }
+
+            // If toggling a subtask, update it within the parent
+            if (task.subtasks) {
+              const updatedSubtasks = task.subtasks.map((subtask) =>
+                subtask.id === taskId
+                  ? { ...subtask, completed: !subtask.completed }
+                  : subtask
+              );
+
+              // Check if this subtask toggle affects the parent
+              const hasUpdatedSubtask = task.subtasks.some(
+                (s) => s.id === taskId
+              );
+              if (hasUpdatedSubtask) {
+                return {
+                  ...task,
+                  subtasks: updatedSubtasks,
+                };
+              }
+            }
+
+            return task;
+          }),
+        }));
+      } catch (error) {
+        console.error("Failed to toggle task:", error);
+      }
+    },
+    [state.tasks]
+  );
+
+  const clearAllTasks = useCallback(async () => {
+    try {
+      // Clear from database
+      await apiService.clearAllTasks();
+
+      // Update local state
+      setState((prev) => ({
+        ...prev,
+        tasks: [],
+      }));
+    } catch (error) {
+      console.error("Failed to clear all tasks:", error);
+    }
   }, []);
 
-  const clearAllTasks = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      tasks: [],
-    }));
-  }, []);
+  const clearCompletedTasks = useCallback(async () => {
+    try {
+      // Clear from database
+      await apiService.clearCompletedTasks();
 
-  const clearCompletedTasks = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      tasks: prev.tasks
-        .map((task) => {
-          // For parent tasks, remove completed subtasks
-          if (task.subtasks) {
-            return {
-              ...task,
-              subtasks: task.subtasks.filter((subtask) => !subtask.completed),
-            };
-          }
-          return task;
-        })
-        .filter((task) => {
-          // Remove parent tasks that are fully completed
-          if (task.subtasks && task.subtasks.length > 0) {
-            // Keep parent if it has remaining subtasks
-            return task.subtasks.some((subtask) => !subtask.completed);
-          }
-          // Remove standalone completed tasks
-          return !task.completed;
-        }),
-    }));
+      // Update local state
+      setState((prev) => ({
+        ...prev,
+        tasks: prev.tasks
+          .map((task) => {
+            // For parent tasks, remove completed subtasks
+            if (task.subtasks) {
+              return {
+                ...task,
+                subtasks: task.subtasks.filter((subtask) => !subtask.completed),
+              };
+            }
+            return task;
+          })
+          .filter((task) => {
+            // Remove parent tasks that are fully completed
+            if (task.subtasks && task.subtasks.length > 0) {
+              // Keep parent if it has remaining subtasks
+              return task.subtasks.some((subtask) => !subtask.completed);
+            }
+            // Remove standalone completed tasks
+            return !task.completed;
+          }),
+      }));
+    } catch (error) {
+      console.error("Failed to clear completed tasks:", error);
+    }
   }, []);
 
   const getCurrentDate = () => {

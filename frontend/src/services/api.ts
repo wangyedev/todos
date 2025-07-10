@@ -215,6 +215,94 @@ export const apiService = {
         );
       });
   },
+
+  // Database CRUD operations
+  async getAllTasks(): Promise<Task[]> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/tasks`);
+      return await handleApiResponse(response);
+    } catch (error) {
+      console.error("Error getting tasks:", error);
+      throw error instanceof ApiError
+        ? error
+        : new ApiError("Failed to get tasks");
+    }
+  },
+
+  async getTaskById(id: string): Promise<Task> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/${id}`);
+      return await handleApiResponse(response);
+    } catch (error) {
+      console.error("Error getting task:", error);
+      throw error instanceof ApiError
+        ? error
+        : new ApiError("Failed to get task");
+    }
+  },
+
+  async updateTaskCompletion(
+    id: string,
+    completed: boolean
+  ): Promise<{ success: boolean }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ completed }),
+      });
+      return await handleApiResponse(response);
+    } catch (error) {
+      console.error("Error updating task:", error);
+      throw error instanceof ApiError
+        ? error
+        : new ApiError("Failed to update task");
+    }
+  },
+
+  async deleteTask(id: string): Promise<{ success: boolean }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/${id}`, {
+        method: "DELETE",
+      });
+      return await handleApiResponse(response);
+    } catch (error) {
+      console.error("Error deleting task:", error);
+      throw error instanceof ApiError
+        ? error
+        : new ApiError("Failed to delete task");
+    }
+  },
+
+  async clearAllTasks(): Promise<{ success: boolean }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/tasks`, {
+        method: "DELETE",
+      });
+      return await handleApiResponse(response);
+    } catch (error) {
+      console.error("Error clearing tasks:", error);
+      throw error instanceof ApiError
+        ? error
+        : new ApiError("Failed to clear tasks");
+    }
+  },
+
+  async clearCompletedTasks(): Promise<{ success: boolean }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/completed`, {
+        method: "DELETE",
+      });
+      return await handleApiResponse(response);
+    } catch (error) {
+      console.error("Error clearing completed tasks:", error);
+      throw error instanceof ApiError
+        ? error
+        : new ApiError("Failed to clear completed tasks");
+    }
+  },
 };
 
 export { ApiError };

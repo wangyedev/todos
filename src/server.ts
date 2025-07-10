@@ -15,6 +15,7 @@ import {
   ErrorResponse,
   StructuredTaskResponse,
 } from "./types";
+import { TaskRepository } from "./database";
 
 // Load environment variables
 dotenv.config();
@@ -335,6 +336,7 @@ Return JSON with "tasks" array containing parent task objects with nested subtas
 
     // Handle subtasks if this is a parent task
     if (task.subtasks && Array.isArray(task.subtasks)) {
+      parentTask.isParent = true; // Mark as parent task
       parentTask.subtasks = task.subtasks.map((subtask, subtaskIndex) => {
         const validatedSubtask: Task = {
           id: uuidv4(),
@@ -461,7 +463,10 @@ app.post(
       try {
         // Use the shared function to generate tasks
         const tasks = await generateTasksFromText(text);
-        res.json(tasks);
+
+        // Save tasks to database
+        const savedTasks = TaskRepository.createTasksWithSubtasks(tasks);
+        res.json(savedTasks);
       } catch (parseError) {
         console.error("Failed to parse task response:", parseError);
 
@@ -477,7 +482,10 @@ app.post(
         ];
 
         console.log("Using fallback tasks:", fallbackTasks);
-        res.json(fallbackTasks);
+        // Save fallback task to database
+        const savedFallbackTasks =
+          TaskRepository.createTasksWithSubtasks(fallbackTasks);
+        res.json(savedFallbackTasks);
       }
     } catch (error) {
       handleError(res, error, "Failed to generate tasks");
@@ -588,12 +596,15 @@ app.post(
         // Use the shared function to generate tasks
         const tasks = await generateTasksFromText(fullTranscription);
 
+        // Save tasks to database
+        const savedTasks = TaskRepository.createTasksWithSubtasks(tasks);
+
         // Send completion with all tasks at once
         res.write(
           `data: ${JSON.stringify({
             phase: "complete",
             transcription: fullTranscription,
-            tasks: tasks,
+            tasks: savedTasks,
           })}\n\n`
         );
 
@@ -618,6 +629,109 @@ app.post(
         })}\n\n`
       );
       res.end();
+    }
+  }
+);
+
+// GET /api/tasks - Get all tasks
+app.get(
+  "/api/tasks",
+  async (req: Request, res: Response<Task[]>): Promise<void> => {
+    try {
+      const tasks = TaskRepository.getAllTasks();
+      res.json(tasks);
+    } catch (error) {
+      handleError(res, error, "Failed to get tasks");
+    }
+  }
+);
+
+// GET /api/tasks/:id - Get a specific task by ID
+app.get(
+  "/api/tasks/:id",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      if (!id) {
+        res.status(400).json({ error: "Task ID is required" } as ErrorResponse);
+        return;
+      }
+      const task = TaskRepository.getTaskById(id);
+      if (!task) {
+        res.status(404).json({ error: "Task not found" } as ErrorResponse);
+        return;
+      }
+      res.json(task);
+    } catch (error) {
+      handleError(res, error, "Failed to get task");
+    }
+  }
+);
+
+// PUT /api/tasks/:id - Update a task (mainly for completion status)
+app.put(
+  "/api/tasks/:id",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { completed } = req.body;
+      if (!id) {
+        res.status(400).json({ error: "Task ID is required" } as ErrorResponse);
+        return;
+      }
+      const success = TaskRepository.updateTaskCompletion(id, completed);
+      if (!success) {
+        res.status(404).json({ error: "Task not found" } as ErrorResponse);
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      handleError(res, error, "Failed to update task");
+    }
+  }
+);
+
+// DELETE /api/tasks/:id - Delete a task
+app.delete(
+  "/api/tasks/:id",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      if (!id) {
+        res.status(400).json({ error: "Task ID is required" } as ErrorResponse);
+        return;
+      }
+      const success = TaskRepository.deleteTask(id);
+      if (!success) {
+        res.status(404).json({ error: "Task not found" } as ErrorResponse);
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      handleError(res, error, "Failed to delete task");
+    }
+  }
+);
+
+// DELETE /api/tasks - Clear all tasks
+app.delete("/api/tasks", async (req: Request, res: Response): Promise<void> => {
+  try {
+    TaskRepository.clearAllTasks();
+    res.json({ success: true });
+  } catch (error) {
+    handleError(res, error, "Failed to clear tasks");
+  }
+});
+
+// DELETE /api/tasks/completed - Clear completed tasks
+app.delete(
+  "/api/tasks/completed",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      TaskRepository.clearCompletedTasks();
+      res.json({ success: true });
+    } catch (error) {
+      handleError(res, error, "Failed to clear completed tasks");
     }
   }
 );
