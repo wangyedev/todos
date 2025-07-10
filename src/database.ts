@@ -34,17 +34,26 @@ db.exec(`
     due_date TEXT,
     created_date TEXT NOT NULL,
     start_date TEXT,
+    user_id TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (parent_id) REFERENCES tasks (id) ON DELETE CASCADE
   )
 `);
 
+// Add user_id column if it doesn't exist (migration)
+try {
+  db.exec(`ALTER TABLE tasks ADD COLUMN user_id TEXT`);
+} catch (error) {
+  // Column already exists, ignore error
+}
+
 // Create index for better query performance
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON tasks(parent_id);
   CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
   CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
+  CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
 `);
 
 console.log("✅ Database initialized successfully");
@@ -59,16 +68,24 @@ export function initializeDatabase() {
 const insertTaskStmt = db.prepare(`
   INSERT INTO tasks (
     id, task, completed, priority, estimated_duration, category, notes,
-    is_parent, parent_id, task_order, due_date, created_date, start_date
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    is_parent, parent_id, task_order, due_date, created_date, start_date, user_id
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const getTasksStmt = db.prepare(`
   SELECT * FROM tasks WHERE parent_id IS NULL ORDER BY task_order ASC, created_at ASC
 `);
 
+const getUserTasksStmt = db.prepare(`
+  SELECT * FROM tasks WHERE parent_id IS NULL AND user_id = ? ORDER BY task_order ASC, created_at ASC
+`);
+
 const getSubtasksStmt = db.prepare(`
   SELECT * FROM tasks WHERE parent_id = ? ORDER BY task_order ASC, created_at ASC
+`);
+
+const getUserSubtasksStmt = db.prepare(`
+  SELECT * FROM tasks WHERE parent_id = ? AND user_id = ? ORDER BY task_order ASC, created_at ASC
 `);
 
 const updateTaskStmt = db.prepare(`
@@ -100,6 +117,10 @@ const getTaskByIdStmt = db.prepare(`
   SELECT * FROM tasks WHERE id = ?
 `);
 
+const getUserTaskByIdStmt = db.prepare(`
+  SELECT * FROM tasks WHERE id = ? AND user_id = ?
+`);
+
 // Database operations
 export class TaskRepository {
   // Create a new task (parent or subtask)
@@ -117,7 +138,8 @@ export class TaskRepository {
       task.order || 0,
       task.dueDate || null,
       task.createdDate,
-      task.startDate || null
+      task.startDate || null,
+      task.userId || null
     );
 
     if (result.changes === 0) {
@@ -152,7 +174,7 @@ export class TaskRepository {
     return transaction(tasks);
   }
 
-  // Get all tasks with their subtasks
+  // Get all tasks with their subtasks (backward compatibility)
   static getAllTasks(): Task[] {
     const parentTasks = getTasksStmt.all() as any[];
 
@@ -171,7 +193,26 @@ export class TaskRepository {
     });
   }
 
-  // Get a single task by ID
+  // Get tasks for a specific user
+  static getTasksByUser(userId: string): Task[] {
+    const parentTasks = getUserTasksStmt.all(userId) as any[];
+
+    return parentTasks.map((row) => {
+      const task = this.mapRowToTask(row);
+
+      // Get subtasks if this is a parent task
+      if (task.isParent) {
+        const subtaskRows = getUserSubtasksStmt.all(task.id, userId) as any[];
+        task.subtasks = subtaskRows.map((subtaskRow) =>
+          this.mapRowToTask(subtaskRow)
+        );
+      }
+
+      return task;
+    });
+  }
+
+  // Get a single task by ID (backward compatibility)
   static getTaskById(id: string): Task | null {
     const row = getTaskByIdStmt.get(id) as any;
     if (!row) return null;
@@ -181,6 +222,24 @@ export class TaskRepository {
     // Get subtasks if this is a parent task
     if (task.isParent) {
       const subtaskRows = getSubtasksStmt.all(task.id) as any[];
+      task.subtasks = subtaskRows.map((subtaskRow) =>
+        this.mapRowToTask(subtaskRow)
+      );
+    }
+
+    return task;
+  }
+
+  // Get a single task by ID for a specific user
+  static getUserTaskById(id: string, userId: string): Task | null {
+    const row = getUserTaskByIdStmt.get(id, userId) as any;
+    if (!row) return null;
+
+    const task = this.mapRowToTask(row);
+
+    // Get subtasks if this is a parent task
+    if (task.isParent) {
+      const subtaskRows = getUserSubtasksStmt.all(task.id, userId) as any[];
       task.subtasks = subtaskRows.map((subtaskRow) =>
         this.mapRowToTask(subtaskRow)
       );
@@ -213,14 +272,30 @@ export class TaskRepository {
     return result.changes > 0;
   }
 
-  // Clear all tasks
+  // Clear all tasks (backward compatibility)
   static clearAllTasks(): void {
     db.exec("DELETE FROM tasks");
   }
 
-  // Clear completed tasks
+  // Clear all tasks for a specific user
+  static clearUserTasks(userId: string): void {
+    const clearUserTasksStmt = db.prepare(
+      "DELETE FROM tasks WHERE user_id = ?"
+    );
+    clearUserTasksStmt.run(userId);
+  }
+
+  // Clear completed tasks (backward compatibility)
   static clearCompletedTasks(): void {
     db.exec("DELETE FROM tasks WHERE completed = 1");
+  }
+
+  // Clear completed tasks for a specific user
+  static clearUserCompletedTasks(userId: string): void {
+    const clearUserCompletedTasksStmt = db.prepare(
+      "DELETE FROM tasks WHERE completed = 1 AND user_id = ?"
+    );
+    clearUserCompletedTasksStmt.run(userId);
   }
 
   // Map database row to Task object
@@ -239,6 +314,7 @@ export class TaskRepository {
       dueDate: row.due_date,
       createdDate: row.created_date,
       startDate: row.start_date,
+      userId: row.user_id,
     };
   }
 }

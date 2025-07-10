@@ -1,4 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
+import { AuthProvider } from "./contexts/AuthContext";
+import AuthGuard from "./components/Auth/AuthGuard";
+import UserProfile from "./components/Auth/UserProfile";
 import AgentInteraction from "./components/AgentInteraction";
 import TodoList from "./components/TodoList";
 import ConfirmationModal from "./components/ConfirmationModal";
@@ -6,14 +9,14 @@ import { Task, AppState } from "./types";
 import { apiService } from "./services/api";
 import "./App.css";
 
-const App: React.FC = () => {
+const MainApp: React.FC = () => {
   const [state, setState] = useState<AppState>({
     tasks: [],
     isLoading: false,
     error: null,
+    user: null,
+    isAuthenticated: false,
   });
-
-  const [activeView, setActiveView] = useState<string>("my-day");
 
   const [confirmModal, setConfirmModal] = useState<{
     isVisible: boolean;
@@ -157,56 +160,7 @@ const App: React.FC = () => {
     [state.tasks]
   );
 
-  const clearAllTasks = useCallback(async () => {
-    try {
-      // Clear from database
-      await apiService.clearAllTasks();
-
-      // Update local state
-      setState((prev) => ({
-        ...prev,
-        tasks: [],
-      }));
-    } catch (error) {
-      console.error("Failed to clear all tasks:", error);
-    }
-  }, []);
-
-  const clearCompletedTasks = useCallback(async () => {
-    try {
-      // Clear from database
-      await apiService.clearCompletedTasks();
-
-      // Update local state
-      setState((prev) => ({
-        ...prev,
-        tasks: prev.tasks
-          .map((task) => {
-            // For parent tasks, remove completed subtasks
-            if (task.subtasks) {
-              return {
-                ...task,
-                subtasks: task.subtasks.filter((subtask) => !subtask.completed),
-              };
-            }
-            return task;
-          })
-          .filter((task) => {
-            // Remove parent tasks that are fully completed
-            if (task.subtasks && task.subtasks.length > 0) {
-              // Keep parent if it has remaining subtasks
-              return task.subtasks.some((subtask) => !subtask.completed);
-            }
-            // Remove standalone completed tasks
-            return !task.completed;
-          }),
-      }));
-    } catch (error) {
-      console.error("Failed to clear completed tasks:", error);
-    }
-  }, []);
-
-  const handleUpdateTaskText = useCallback(
+  const handleTaskTextUpdate = useCallback(
     async (taskId: string, newText: string) => {
       try {
         // Update in database
@@ -216,30 +170,21 @@ const App: React.FC = () => {
         setState((prev) => ({
           ...prev,
           tasks: prev.tasks.map((task) => {
-            // If updating a parent task
+            // Update parent task
             if (task.id === taskId) {
-              return {
-                ...task,
-                task: newText,
-              };
+              return { ...task, task: newText };
             }
 
-            // If updating a subtask, update it within the parent
+            // Update subtask
             if (task.subtasks) {
-              const updatedSubtasks = task.subtasks.map((subtask) =>
-                subtask.id === taskId ? { ...subtask, task: newText } : subtask
-              );
-
-              // Check if this subtask update affects the parent
-              const hasUpdatedSubtask = task.subtasks.some(
-                (s) => s.id === taskId
-              );
-              if (hasUpdatedSubtask) {
-                return {
-                  ...task,
-                  subtasks: updatedSubtasks,
-                };
-              }
+              return {
+                ...task,
+                subtasks: task.subtasks.map((subtask) =>
+                  subtask.id === taskId
+                    ? { ...subtask, task: newText }
+                    : subtask
+                ),
+              };
             }
 
             return task;
@@ -252,7 +197,7 @@ const App: React.FC = () => {
     []
   );
 
-  const handleUpdateTaskNotes = useCallback(
+  const handleTaskNotesUpdate = useCallback(
     async (taskId: string, newNotes: string) => {
       try {
         // Update in database
@@ -262,32 +207,21 @@ const App: React.FC = () => {
         setState((prev) => ({
           ...prev,
           tasks: prev.tasks.map((task) => {
-            // If updating a parent task
+            // Update parent task
             if (task.id === taskId) {
-              return {
-                ...task,
-                notes: newNotes,
-              };
+              return { ...task, notes: newNotes };
             }
 
-            // If updating a subtask, update it within the parent
+            // Update subtask
             if (task.subtasks) {
-              const updatedSubtasks = task.subtasks.map((subtask) =>
-                subtask.id === taskId
-                  ? { ...subtask, notes: newNotes }
-                  : subtask
-              );
-
-              // Check if this subtask update affects the parent
-              const hasUpdatedSubtask = task.subtasks.some(
-                (s) => s.id === taskId
-              );
-              if (hasUpdatedSubtask) {
-                return {
-                  ...task,
-                  subtasks: updatedSubtasks,
-                };
-              }
+              return {
+                ...task,
+                subtasks: task.subtasks.map((subtask) =>
+                  subtask.id === taskId
+                    ? { ...subtask, notes: newNotes }
+                    : subtask
+                ),
+              };
             }
 
             return task;
@@ -300,268 +234,96 @@ const App: React.FC = () => {
     []
   );
 
+  const closeConfirmation = () => {
+    setConfirmModal((prev) => ({ ...prev, isVisible: false }));
+  };
+
   const getCurrentDate = () => {
     const now = new Date();
-    const options: Intl.DateTimeFormatOptions = {
-      weekday: "short",
-      day: "2-digit",
+    return now.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
       month: "long",
-    };
-    return now.toLocaleDateString("en-US", options);
+      day: "numeric",
+    });
   };
 
   const getCurrentTime = () => {
     const now = new Date();
     return now.toLocaleTimeString("en-US", {
-      hour: "numeric",
+      hour: "2-digit",
       minute: "2-digit",
-      hour12: true,
     });
   };
-
-  // Calculate task counts for hierarchical structure
-  const getTotalTaskCount = () => {
-    return state.tasks.reduce((total, task) => {
-      return total + 1 + (task.subtasks ? task.subtasks.length : 0);
-    }, 0);
-  };
-
-  const getIncompleteTaskCount = () => {
-    return state.tasks.reduce((total, task) => {
-      if (task.subtasks && task.subtasks.length > 0) {
-        // For parent tasks with subtasks, count only the incomplete subtasks
-        return (
-          total + task.subtasks.filter((subtask) => !subtask.completed).length
-        );
-      } else {
-        // For standalone tasks, count if not completed
-        return total + (task.completed ? 0 : 1);
-      }
-    }, 0);
-  };
-
-  const confirmClearAllTasks = useCallback(() => {
-    const taskCount = getTotalTaskCount();
-    const message =
-      taskCount === 0
-        ? "There are currently no tasks to clear."
-        : `Are you sure you want to clear all ${taskCount} task${
-            taskCount === 1 ? "" : "s"
-          }? This action cannot be undone.`;
-
-    setConfirmModal({
-      isVisible: true,
-      title: "Clear All Tasks",
-      message,
-      onConfirm: () => {
-        clearAllTasks();
-        setConfirmModal((prev) => ({ ...prev, isVisible: false }));
-      },
-      variant: "danger",
-      confirmText: "Clear All",
-    });
-  }, [clearAllTasks, state.tasks]);
-
-  const confirmClearCompletedTasks = useCallback(() => {
-    const completedCount = state.tasks.reduce((total, task) => {
-      if (task.subtasks && task.subtasks.length > 0) {
-        // Count only completed subtasks
-        return (
-          total + task.subtasks.filter((subtask) => subtask.completed).length
-        );
-      } else {
-        // Count standalone completed tasks
-        return total + (task.completed ? 1 : 0);
-      }
-    }, 0);
-
-    const message =
-      completedCount === 0
-        ? "There are currently no completed tasks to clear."
-        : `Are you sure you want to clear ${completedCount} completed task${
-            completedCount === 1 ? "" : "s"
-          }? This action cannot be undone.`;
-
-    setConfirmModal({
-      isVisible: true,
-      title: "Clear Completed Tasks",
-      message,
-      onConfirm: () => {
-        clearCompletedTasks();
-        setConfirmModal((prev) => ({ ...prev, isVisible: false }));
-      },
-      variant: "warning",
-      confirmText: "Clear Completed",
-    });
-  }, [state.tasks, clearCompletedTasks]);
-
-  const sidebarItems = [
-    {
-      id: "my-day",
-      label: "My Day",
-      icon: "☀️",
-      count: getIncompleteTaskCount(),
-    },
-    { id: "calendar", label: "Calendar", icon: "📅", count: 2 },
-    { id: "all", label: "All", icon: "📋", count: getTotalTaskCount() },
-    {
-      id: "tasks",
-      label: "Tasks",
-      icon: "✅",
-      count: getIncompleteTaskCount(),
-    },
-    { id: "notes", label: "Notes", icon: "📝", count: 4 },
-  ];
-
-  const projects = [
-    { id: "tech-upgrade", label: "Tech-Upgrade", icon: "⚡", count: 3 },
-    { id: "new-design", label: "New-Design", icon: "🎨", count: 3 },
-  ];
 
   return (
-    <div className="min-h-screen flex bg-gray-900">
-      {/* Sidebar */}
-      <div className="w-80 sidebar flex flex-col">
-        <div className="p-6 border-b border-gray-700 border-opacity-30">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-              <span className="text-white text-sm font-semibold">J</span>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center">
+              <h1 className="text-xl font-semibold text-gray-900">
+                AI Task Manager
+              </h1>
             </div>
-            <span className="text-white font-medium">Jessie</span>
-          </div>
-
-          <div className="add-task-btn">
-            <span className="text-xl">+</span>
-            <span>Add Task</span>
-          </div>
-        </div>
-
-        <div className="flex-1 p-6 overflow-y-auto">
-          <div className="space-y-2 mb-8">
-            {sidebarItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setActiveView(item.id)}
-                className={`btn-sidebar ${
-                  activeView === item.id ? "active" : ""
-                }`}
-              >
-                <span className="text-lg">{item.icon}</span>
-                <span className="flex-1">{item.label}</span>
-                <span className="text-xs text-gray-400">{item.count}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="section-header">
-            <span>Projects</span>
-          </div>
-
-          <div className="space-y-2">
-            {projects.map((project) => (
-              <button
-                key={project.id}
-                onClick={() => setActiveView(project.id)}
-                className={`btn-sidebar ${
-                  activeView === project.id ? "active" : ""
-                }`}
-              >
-                <span className="text-lg">{project.icon}</span>
-                <span className="flex-1">{project.label}</span>
-                <span className="text-xs text-gray-400">{project.count}</span>
-              </button>
-            ))}
+            <div className="flex items-center space-x-4">
+              <div className="text-sm text-gray-500">
+                {getCurrentDate()} • {getCurrentTime()}
+              </div>
+              <UserProfile />
+            </div>
           </div>
         </div>
-
-        <div className="p-6 border-t border-gray-700 border-opacity-30">
-          <div className="add-task-btn">
-            <span className="text-xl">📝</span>
-            <span>New List</span>
-          </div>
-        </div>
-      </div>
+      </header>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col main-content">
-        {/* Header */}
-        <div className="p-8 border-b border-gray-700 border-opacity-30">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-4xl font-bold text-white mb-2">My Day</h1>
-              <p className="text-gray-400">
-                {getCurrentDate()} • {getCurrentTime()}
-              </p>
-            </div>
-            <div className="flex items-center gap-4">
-              <button className="p-2 text-gray-400 hover:text-white transition-colors">
-                <span className="text-xl">⚙️</span>
-              </button>
-              <button className="p-2 text-gray-400 hover:text-white transition-colors">
-                <span className="text-xl">🔔</span>
-              </button>
-            </div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left Column - Agent Interaction */}
+          <div className="lg:col-span-1">
+            <AgentInteraction
+              onTasksGenerated={handleTasksGenerated}
+              isLoading={state.isLoading}
+            />
+          </div>
+
+          {/* Right Column - Todo List */}
+          <div className="lg:col-span-2">
+            <TodoList
+              tasks={state.tasks}
+              onToggleTask={handleToggleTask}
+              onDeleteTask={handleDeleteTask}
+              onUpdateTaskText={handleTaskTextUpdate}
+              onUpdateTaskNotes={handleTaskNotesUpdate}
+            />
           </div>
         </div>
-
-        {/* AI Task Agent Section */}
-        <div className="p-8 border-b border-gray-700 border-opacity-30">
-          <AgentInteraction
-            onTasksGenerated={handleTasksGenerated}
-            isLoading={state.isLoading}
-          />
-        </div>
-
-        {/* Tasks Content */}
-        <div className="flex-1 p-8 overflow-y-auto">
-          <TodoList
-            tasks={state.tasks}
-            onDeleteTask={handleDeleteTask}
-            onToggleTask={handleToggleTask}
-            onUpdateTaskText={handleUpdateTaskText}
-            onUpdateTaskNotes={handleUpdateTaskNotes}
-          />
-
-          {state.tasks.length > 0 && (
-            <div className="flex gap-4 justify-center mt-8 pt-6 border-t border-gray-700 border-opacity-30">
-              <button
-                onClick={confirmClearCompletedTasks}
-                className="bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white font-medium py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={
-                  !state.tasks.some((task) => {
-                    if (task.subtasks && task.subtasks.length > 0) {
-                      return task.subtasks.some((subtask) => subtask.completed);
-                    }
-                    return task.completed;
-                  })
-                }
-              >
-                Clear Completed
-              </button>
-              <button
-                onClick={confirmClearAllTasks}
-                className="bg-red-600 hover:bg-red-500 text-white font-medium py-2 px-4 rounded-lg transition-all duration-200"
-              >
-                Clear All
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+      </main>
 
       {/* Confirmation Modal */}
-      <ConfirmationModal
-        isVisible={confirmModal.isVisible}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        onConfirm={confirmModal.onConfirm}
-        onCancel={() =>
-          setConfirmModal((prev) => ({ ...prev, isVisible: false }))
-        }
-        variant={confirmModal.variant}
-        confirmText={confirmModal.confirmText}
-      />
+      {confirmModal.isVisible && (
+        <ConfirmationModal
+          isVisible={confirmModal.isVisible}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          onConfirm={confirmModal.onConfirm}
+          onCancel={closeConfirmation}
+          variant={confirmModal.variant}
+          confirmText={confirmModal.confirmText}
+        />
+      )}
     </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <AuthGuard>
+        <MainApp />
+      </AuthGuard>
+    </AuthProvider>
   );
 };
 

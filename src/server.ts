@@ -14,8 +14,10 @@ import {
   ModelsResponse,
   ErrorResponse,
   StructuredTaskResponse,
+  AuthenticatedRequest,
 } from "./types";
 import { TaskRepository } from "./database";
+import { authenticateUser, optionalAuth } from "./middleware/auth";
 
 // Load environment variables
 dotenv.config();
@@ -423,6 +425,7 @@ interface MulterRequest extends Request {
 // POST /api/transcribe-voice
 app.post(
   "/api/transcribe-voice",
+  authenticateUser,
   upload.single("audio"),
   async (req: MulterRequest, res: Response): Promise<void> => {
     try {
@@ -476,10 +479,8 @@ app.post(
 // POST /api/generate-tasks
 app.post(
   "/api/generate-tasks",
-  async (
-    req: Request<{}, Task[], GenerateTasksRequest>,
-    res: Response<Task[]>
-  ): Promise<void> => {
+  authenticateUser,
+  async (req: AuthenticatedRequest, res: Response<Task[]>): Promise<void> => {
     try {
       // Validate input
       const { error, value } = generateTasksSchema.validate(req.body);
@@ -495,8 +496,13 @@ app.post(
         // Use the shared function to generate tasks
         const tasks = await generateTasksFromText(text);
 
-        // Save tasks to database
-        const savedTasks = TaskRepository.createTasksWithSubtasks(tasks);
+        // Save tasks to database with user ID
+        const tasksWithUserId = tasks.map((task) => ({
+          ...task,
+          userId: req.user!.id,
+        }));
+        const savedTasks =
+          TaskRepository.createTasksWithSubtasks(tasksWithUserId);
         res.json(savedTasks);
       } catch (parseError) {
         console.error("Failed to parse task response:", parseError);
@@ -513,9 +519,14 @@ app.post(
         ];
 
         console.log("Using fallback tasks:", fallbackTasks);
-        // Save fallback task to database
-        const savedFallbackTasks =
-          TaskRepository.createTasksWithSubtasks(fallbackTasks);
+        // Save fallback task to database with user ID
+        const fallbackTasksWithUserId = fallbackTasks.map((task) => ({
+          ...task,
+          userId: req.user!.id,
+        }));
+        const savedFallbackTasks = TaskRepository.createTasksWithSubtasks(
+          fallbackTasksWithUserId
+        );
         res.json(savedFallbackTasks);
       }
     } catch (error) {
@@ -527,6 +538,7 @@ app.post(
 // Native streaming voice transcription endpoint
 app.post(
   "/api/transcribe-voice-stream",
+  authenticateUser,
   upload.single("audio"),
   async (req, res) => {
     try {
@@ -667,7 +679,8 @@ app.post(
 // POST /api/refine-task-text - Refine task text using LLM
 app.post(
   "/api/refine-task-text",
-  async (req: Request, res: Response): Promise<void> => {
+  authenticateUser,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       // Validate input
       const { error, value } = refineTaskTextSchema.validate(req.body);
@@ -735,7 +748,8 @@ Return only the refined task text, no explanations or additional commentary.`;
 // POST /api/refine-task-notes - Refine task notes using LLM
 app.post(
   "/api/refine-task-notes",
-  async (req: Request, res: Response): Promise<void> => {
+  authenticateUser,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       // Validate input
       const { error, value } = refineTaskNotesSchema.validate(req.body);
@@ -803,9 +817,10 @@ Return only the refined notes text, no explanations or additional commentary.`;
 // GET /api/tasks - Get all tasks
 app.get(
   "/api/tasks",
-  async (req: Request, res: Response<Task[]>): Promise<void> => {
+  authenticateUser,
+  async (req: AuthenticatedRequest, res: Response<Task[]>): Promise<void> => {
     try {
-      const tasks = TaskRepository.getAllTasks();
+      const tasks = TaskRepository.getTasksByUser(req.user!.id);
       res.json(tasks);
     } catch (error) {
       handleError(res, error, "Failed to get tasks");
@@ -816,14 +831,15 @@ app.get(
 // GET /api/tasks/:id - Get a specific task by ID
 app.get(
   "/api/tasks/:id",
-  async (req: Request, res: Response): Promise<void> => {
+  authenticateUser,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
       if (!id) {
         res.status(400).json({ error: "Task ID is required" } as ErrorResponse);
         return;
       }
-      const task = TaskRepository.getTaskById(id);
+      const task = TaskRepository.getUserTaskById(id, req.user!.id);
       if (!task) {
         res.status(404).json({ error: "Task not found" } as ErrorResponse);
         return;
@@ -835,10 +851,11 @@ app.get(
   }
 );
 
-// PUT /api/tasks/:id - Update a task (mainly for completion status)
+// PUT /api/tasks/:id/completion - Update task completion status
 app.put(
-  "/api/tasks/:id",
-  async (req: Request, res: Response): Promise<void> => {
+  "/api/tasks/:id/completion",
+  authenticateUser,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
       const { completed } = req.body;
@@ -846,9 +863,19 @@ app.put(
         res.status(400).json({ error: "Task ID is required" } as ErrorResponse);
         return;
       }
+
+      // Verify task belongs to user
+      const task = TaskRepository.getUserTaskById(id, req.user!.id);
+      if (!task) {
+        res.status(404).json({ error: "Task not found" } as ErrorResponse);
+        return;
+      }
+
       const success = TaskRepository.updateTaskCompletion(id, completed);
       if (!success) {
-        res.status(404).json({ error: "Task not found" } as ErrorResponse);
+        res
+          .status(500)
+          .json({ error: "Failed to update task" } as ErrorResponse);
         return;
       }
       res.json({ success: true });
@@ -861,7 +888,8 @@ app.put(
 // PUT /api/tasks/:id/text - Update task text
 app.put(
   "/api/tasks/:id/text",
-  async (req: Request, res: Response): Promise<void> => {
+  authenticateUser,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
       const { text } = req.body;
@@ -875,9 +903,19 @@ app.put(
           .json({ error: "Task text is required" } as ErrorResponse);
         return;
       }
+
+      // Verify task belongs to user
+      const task = TaskRepository.getUserTaskById(id, req.user!.id);
+      if (!task) {
+        res.status(404).json({ error: "Task not found" } as ErrorResponse);
+        return;
+      }
+
       const success = TaskRepository.updateTaskText(id, text.trim());
       if (!success) {
-        res.status(404).json({ error: "Task not found" } as ErrorResponse);
+        res
+          .status(500)
+          .json({ error: "Failed to update task" } as ErrorResponse);
         return;
       }
       res.json({ success: true });
@@ -890,7 +928,8 @@ app.put(
 // PUT /api/tasks/:id/notes - Update task notes
 app.put(
   "/api/tasks/:id/notes",
-  async (req: Request, res: Response): Promise<void> => {
+  authenticateUser,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
       const { notes } = req.body;
@@ -898,11 +937,21 @@ app.put(
         res.status(400).json({ error: "Task ID is required" } as ErrorResponse);
         return;
       }
+
+      // Verify task belongs to user
+      const task = TaskRepository.getUserTaskById(id, req.user!.id);
+      if (!task) {
+        res.status(404).json({ error: "Task not found" } as ErrorResponse);
+        return;
+      }
+
       // Allow empty notes to clear them
       const notesValue = notes || "";
       const success = TaskRepository.updateTaskNotes(id, notesValue);
       if (!success) {
-        res.status(404).json({ error: "Task not found" } as ErrorResponse);
+        res
+          .status(500)
+          .json({ error: "Failed to update task" } as ErrorResponse);
         return;
       }
       res.json({ success: true });
@@ -915,16 +964,27 @@ app.put(
 // DELETE /api/tasks/:id - Delete a task
 app.delete(
   "/api/tasks/:id",
-  async (req: Request, res: Response): Promise<void> => {
+  authenticateUser,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
       if (!id) {
         res.status(400).json({ error: "Task ID is required" } as ErrorResponse);
         return;
       }
+
+      // Verify task belongs to user
+      const task = TaskRepository.getUserTaskById(id, req.user!.id);
+      if (!task) {
+        res.status(404).json({ error: "Task not found" } as ErrorResponse);
+        return;
+      }
+
       const success = TaskRepository.deleteTask(id);
       if (!success) {
-        res.status(404).json({ error: "Task not found" } as ErrorResponse);
+        res
+          .status(500)
+          .json({ error: "Failed to delete task" } as ErrorResponse);
         return;
       }
       res.json({ success: true });
@@ -935,21 +995,26 @@ app.delete(
 );
 
 // DELETE /api/tasks - Clear all tasks
-app.delete("/api/tasks", async (req: Request, res: Response): Promise<void> => {
-  try {
-    TaskRepository.clearAllTasks();
-    res.json({ success: true });
-  } catch (error) {
-    handleError(res, error, "Failed to clear tasks");
+app.delete(
+  "/api/tasks",
+  authenticateUser,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      TaskRepository.clearUserTasks(req.user!.id);
+      res.json({ success: true });
+    } catch (error) {
+      handleError(res, error, "Failed to clear tasks");
+    }
   }
-});
+);
 
 // DELETE /api/tasks/completed - Clear completed tasks
 app.delete(
   "/api/tasks/completed",
-  async (req: Request, res: Response): Promise<void> => {
+  authenticateUser,
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      TaskRepository.clearCompletedTasks();
+      TaskRepository.clearUserCompletedTasks(req.user!.id);
       res.json({ success: true });
     } catch (error) {
       handleError(res, error, "Failed to clear completed tasks");

@@ -1,4 +1,5 @@
 import { Task, GenerateTasksRequest, TranscribeVoiceResponse } from "../types";
+import { supabase } from "../lib/supabase";
 
 const API_BASE_URL = "http://localhost:8000";
 
@@ -8,6 +9,22 @@ class ApiError extends Error {
     this.name = "ApiError";
   }
 }
+
+const getAuthHeaders = async (): Promise<{ [key: string]: string }> => {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const headers: { [key: string]: string } = {
+    "Content-Type": "application/json",
+  };
+
+  if (session?.access_token) {
+    headers["Authorization"] = `Bearer ${session.access_token}`;
+  }
+
+  return headers;
+};
 
 const handleApiResponse = async (response: Response) => {
   if (!response.ok) {
@@ -23,11 +40,10 @@ const handleApiResponse = async (response: Response) => {
 export const apiService = {
   async generateTasks(request: GenerateTasksRequest): Promise<Task[]> {
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/api/generate-tasks`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify(request),
       });
 
@@ -42,11 +58,20 @@ export const apiService = {
 
   async transcribeVoice(audioBlob: Blob): Promise<TranscribeVoiceResponse> {
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       const formData = new FormData();
       formData.append("audio", audioBlob, "audio.wav");
 
+      const headers: { [key: string]: string } = {};
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
       const response = await fetch(`${API_BASE_URL}/api/transcribe-voice`, {
         method: "POST",
+        headers,
         body: formData,
       });
 
@@ -83,143 +108,150 @@ export const apiService = {
 
     let lastTranscription = "";
 
-    fetch(`${API_BASE_URL}/api/transcribe-voice-stream`, {
-      method: "POST",
-      body: formData,
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new ApiError(
-            `Failed to start streaming: ${response.statusText}`,
-            response.status
-          );
-        }
+    // Get auth headers for streaming
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const headers: { [key: string]: string } = {};
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
 
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new ApiError("Failed to get response reader");
-        }
+      fetch(`${API_BASE_URL}/api/transcribe-voice-stream`, {
+        method: "POST",
+        headers,
+        body: formData,
+      })
+        .then((response) => {
+          if (!response.ok) {
+            throw new ApiError(
+              `Failed to start streaming: ${response.statusText}`,
+              response.status
+            );
+          }
 
-        const decoder = new TextDecoder();
+          const reader = response.body?.getReader();
+          if (!reader) {
+            throw new ApiError("Failed to get response reader");
+          }
 
-        function readStream(): void {
-          reader!
-            .read()
-            .then(({ done, value }) => {
-              if (done) {
-                onComplete();
-                return;
-              }
+          const decoder = new TextDecoder();
 
-              const chunk = decoder.decode(value);
-              const lines = chunk.split("\n");
+          function readStream(): void {
+            reader!
+              .read()
+              .then(({ done, value }) => {
+                if (done) {
+                  onComplete();
+                  return;
+                }
 
-              for (const line of lines) {
-                if (line.startsWith("data: ")) {
-                  try {
-                    const rawData = JSON.parse(line.slice(6));
+                const chunk = decoder.decode(value);
+                const lines = chunk.split("\n");
 
-                    // Transform server message format to frontend expected format
-                    let transformedMessage: { type: string; data: any };
+                for (const line of lines) {
+                  if (line.startsWith("data: ")) {
+                    try {
+                      const rawData = JSON.parse(line.slice(6));
 
-                    switch (rawData.phase) {
-                      case "processing":
-                        transformedMessage = {
-                          type: "status",
-                          data: { message: rawData.message },
-                        };
-                        break;
+                      // Transform server message format to frontend expected format
+                      let transformedMessage: { type: string; data: any };
 
-                      case "transcribing":
-                        if (rawData.text !== undefined) {
-                          // Store the latest transcription
-                          lastTranscription = rawData.fullText || rawData.text;
-
-                          // Partial transcription chunk
+                      switch (rawData.phase) {
+                        case "processing":
                           transformedMessage = {
-                            type: "transcription_partial",
-                            data: { text: lastTranscription },
-                          };
-                        } else {
-                          // Transcription started
-                          transformedMessage = {
-                            type: "transcription_start",
+                            type: "status",
                             data: { message: rawData.message },
                           };
-                        }
-                        break;
+                          break;
 
-                      case "generating":
-                        if (rawData.text !== undefined) {
-                          // Task generation in progress - we can ignore these chunks
+                        case "transcribing":
+                          if (rawData.text !== undefined) {
+                            // Store the latest transcription
+                            lastTranscription =
+                              rawData.fullText || rawData.text;
+
+                            // Partial transcription chunk
+                            transformedMessage = {
+                              type: "transcription_partial",
+                              data: { text: lastTranscription },
+                            };
+                          } else {
+                            // Transcription started
+                            transformedMessage = {
+                              type: "transcription_start",
+                              data: { message: rawData.message },
+                            };
+                          }
+                          break;
+
+                        case "generating":
+                          if (rawData.text !== undefined) {
+                            // Task generation in progress - we can ignore these chunks
+                            continue;
+                          } else {
+                            // Send transcription complete first, then task generation start
+                            onMessage({
+                              type: "transcription_complete",
+                              data: { text: lastTranscription },
+                            });
+
+                            // Task generation started
+                            transformedMessage = {
+                              type: "task_generation_start",
+                              data: { message: rawData.message },
+                            };
+                          }
+                          break;
+
+                        case "complete":
+                          transformedMessage = {
+                            type: "task_generation_complete",
+                            data: {
+                              tasks: rawData.tasks || [],
+                              transcription:
+                                rawData.transcription || lastTranscription,
+                            },
+                          };
+                          break;
+
+                        case "error":
+                          transformedMessage = {
+                            type: "error",
+                            data: { message: rawData.message },
+                          };
+                          break;
+
+                        default:
+                          console.warn("Unknown phase:", rawData.phase);
                           continue;
-                        } else {
-                          // Send transcription complete first, then task generation start
-                          onMessage({
-                            type: "transcription_complete",
-                            data: { text: lastTranscription },
-                          });
+                      }
 
-                          // Task generation started
-                          transformedMessage = {
-                            type: "task_generation_start",
-                            data: { message: rawData.message },
-                          };
-                        }
-                        break;
-
-                      case "complete":
-                        transformedMessage = {
-                          type: "task_generation_complete",
-                          data: {
-                            tasks: rawData.tasks || [],
-                            transcription:
-                              rawData.transcription || lastTranscription,
-                          },
-                        };
-                        break;
-
-                      case "error":
-                        transformedMessage = {
-                          type: "error",
-                          data: { message: rawData.message },
-                        };
-                        break;
-
-                      default:
-                        console.warn("Unknown phase:", rawData.phase);
-                        continue;
+                      onMessage(transformedMessage);
+                    } catch (error) {
+                      console.error("Failed to parse SSE message:", error);
                     }
-
-                    onMessage(transformedMessage);
-                  } catch (error) {
-                    console.error("Failed to parse SSE message:", error);
                   }
                 }
-              }
 
-              readStream();
-            })
-            .catch((error) => {
-              onError(error);
-            });
-        }
+                readStream();
+              })
+              .catch(onError);
+          }
 
-        readStream();
-      })
-      .catch((error) => {
-        onError(
-          error instanceof ApiError
-            ? error
-            : new ApiError("Failed to start streaming")
-        );
-      });
+          readStream();
+        })
+        .catch(onError);
+    });
   },
 
   // Database CRUD operations
   async getAllTasks(): Promise<Task[]> {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/tasks`);
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/api/tasks`, {
+        method: "GET",
+        headers,
+      });
+
       return await handleApiResponse(response);
     } catch (error) {
       console.error("Error getting tasks:", error);
@@ -231,7 +263,12 @@ export const apiService = {
 
   async getTaskById(id: string): Promise<Task> {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/tasks/${id}`);
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/api/tasks/${id}`, {
+        method: "GET",
+        headers,
+      });
+
       return await handleApiResponse(response);
     } catch (error) {
       console.error("Error getting task:", error);
@@ -246,27 +283,33 @@ export const apiService = {
     completed: boolean
   ): Promise<{ success: boolean }> {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/tasks/${id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ completed }),
-      });
+      const headers = await getAuthHeaders();
+      const response = await fetch(
+        `${API_BASE_URL}/api/tasks/${id}/completion`,
+        {
+          method: "PUT",
+          headers,
+          body: JSON.stringify({ completed }),
+        }
+      );
+
       return await handleApiResponse(response);
     } catch (error) {
-      console.error("Error updating task:", error);
+      console.error("Error updating task completion:", error);
       throw error instanceof ApiError
         ? error
-        : new ApiError("Failed to update task");
+        : new ApiError("Failed to update task completion");
     }
   },
 
   async deleteTask(id: string): Promise<{ success: boolean }> {
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/api/tasks/${id}`, {
         method: "DELETE",
+        headers,
       });
+
       return await handleApiResponse(response);
     } catch (error) {
       console.error("Error deleting task:", error);
@@ -278,23 +321,29 @@ export const apiService = {
 
   async clearAllTasks(): Promise<{ success: boolean }> {
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/api/tasks`, {
         method: "DELETE",
+        headers,
       });
+
       return await handleApiResponse(response);
     } catch (error) {
-      console.error("Error clearing tasks:", error);
+      console.error("Error clearing all tasks:", error);
       throw error instanceof ApiError
         ? error
-        : new ApiError("Failed to clear tasks");
+        : new ApiError("Failed to clear all tasks");
     }
   },
 
   async clearCompletedTasks(): Promise<{ success: boolean }> {
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/api/tasks/completed`, {
         method: "DELETE",
+        headers,
       });
+
       return await handleApiResponse(response);
     } catch (error) {
       console.error("Error clearing completed tasks:", error);
@@ -309,13 +358,13 @@ export const apiService = {
     text: string
   ): Promise<{ success: boolean }> {
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/api/tasks/${id}/text`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify({ text }),
       });
+
       return await handleApiResponse(response);
     } catch (error) {
       console.error("Error updating task text:", error);
@@ -334,13 +383,13 @@ export const apiService = {
     refinementType: string;
   }> {
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/api/refine-task-text`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify({ text, refinementType }),
       });
+
       return await handleApiResponse(response);
     } catch (error) {
       console.error("Error refining task text:", error);
@@ -355,13 +404,13 @@ export const apiService = {
     notes: string
   ): Promise<{ success: boolean }> {
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/api/tasks/${id}/notes`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify({ notes }),
       });
+
       return await handleApiResponse(response);
     } catch (error) {
       console.error("Error updating task notes:", error);
@@ -380,13 +429,13 @@ export const apiService = {
     refinementType: string;
   }> {
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/api/refine-task-notes`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify({ notes, refinementType }),
       });
+
       return await handleApiResponse(response);
     } catch (error) {
       console.error("Error refining task notes:", error);

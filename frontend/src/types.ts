@@ -13,6 +13,7 @@ export interface Task {
   dueDate?: string; // ISO date string
   createdDate: string; // ISO date string
   startDate?: string; // ISO date string
+  userId?: string; // Associated user ID
 }
 
 export interface TaskGroup {
@@ -25,6 +26,7 @@ export interface TaskGroup {
   tasks: Task[];
   completed?: boolean;
   progress?: number;
+  userId?: string; // Associated user ID
 }
 
 export interface ApiResponse<T> {
@@ -83,4 +85,47 @@ export interface AppState {
   tasks: Task[];
   isLoading: boolean;
   error: string | null;
+  user: User | null;
+  isAuthenticated: boolean;
+}
+
+// Authentication Types
+export interface User {
+  id: string;
+  email: string;
+  name?: string;
+  avatarUrl?: string;
+  provider?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuthState {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface SignupRequest {
+  email: string;
+  password: string;
+  name?: string;
+}
+
+export interface AuthResponse {
+  user: User | null;
+  error?: string;
+  message?: string;
+}
+
+export interface GoogleAuthResponse {
+  user: User | null;
+  error?: string;
+  message?: string;
 }
