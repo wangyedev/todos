@@ -10,6 +10,9 @@ export interface Task {
   subtasks?: Task[];
   parentId?: string;
   order?: number;
+  dueDate?: string; // ISO date string
+  createdDate: string; // ISO date string
+  startDate?: string; // ISO date string
 }
 
 export interface TaskGroup {

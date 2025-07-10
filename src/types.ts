@@ -10,6 +10,9 @@ export interface Task {
   subtasks?: Task[];
   parentId?: string;
   order?: number;
+  dueDate?: string; // ISO date string
+  createdDate: string; // ISO date string
+  startDate?: string; // ISO date string;
 }
 
 export interface TaskGroup {
@@ -69,6 +72,8 @@ export interface StructuredTaskResponse {
     category?: string;
     notes?: string;
     isParent?: boolean;
+    dueDate?: string;
+    startDate?: string;
     subtasks?: Array<{
       id: number;
       task: string;
@@ -76,6 +81,8 @@ export interface StructuredTaskResponse {
       estimatedDuration?: string;
       category?: string;
       notes?: string;
+      dueDate?: string;
+      startDate?: string;
     }>;
   }>;
 }

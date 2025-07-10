@@ -77,12 +77,31 @@ const TodoList: React.FC<TodoListProps> = ({
     const isExpanded = expandedTasks.has(task.id);
     const parentProgress = isSubtask ? 0 : getParentProgress(task);
     const isCompleted = isSubtask ? task.completed : isParentCompleted(task);
+    const taskIsOverdue = isOverdue(task);
+    const taskIsDueToday = isDueToday(task);
 
     return (
       <div className={`${isSubtask ? "ml-8" : ""}`}>
-        <div className={`task-item ${isCompleted ? "completed" : ""}`}>
+        <div
+          className={`task-item ${isCompleted ? "completed" : ""} ${
+            taskIsOverdue
+              ? "border-red-500 border-opacity-50"
+              : taskIsDueToday
+              ? "border-orange-500 border-opacity-50"
+              : ""
+          }`}
+        >
           <div className="flex items-start gap-4">
             <div className="flex items-center gap-2">
+              {/* Overdue indicator */}
+              {taskIsOverdue && !isCompleted && (
+                <span className="text-red-400 text-xs">🚨</span>
+              )}
+              {/* Due today indicator */}
+              {taskIsDueToday && !isCompleted && !taskIsOverdue && (
+                <span className="text-orange-400 text-xs">⚠️</span>
+              )}
+
               {/* Parent task expand/collapse button */}
               {!isSubtask && task.subtasks && task.subtasks.length > 0 && (
                 <button
@@ -166,6 +185,19 @@ const TodoList: React.FC<TodoListProps> = ({
                       </span>
                     )}
 
+                    {task.dueDate && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-orange-500 bg-opacity-20 text-orange-300 border border-orange-500 border-opacity-30">
+                        📅 Due: {new Date(task.dueDate).toLocaleDateString()}
+                      </span>
+                    )}
+
+                    {task.startDate && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-500 bg-opacity-20 text-green-300 border border-green-500 border-opacity-30">
+                        🚀 Start:{" "}
+                        {new Date(task.startDate).toLocaleDateString()}
+                      </span>
+                    )}
+
                     {task.category && (
                       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-purple-500 bg-opacity-20 text-purple-300 border border-purple-500 border-opacity-30">
                         📂 {task.category}
@@ -220,15 +252,24 @@ const TodoList: React.FC<TodoListProps> = ({
     );
   };
 
-  // Categorize tasks
+  // Categorize tasks based on due dates
   const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
+  const todayStr = today.toISOString().split("T")[0];
 
-  const overdueTasks = tasks.filter(
-    (task) => !isParentCompleted(task) && Math.random() < 0.2
-  ); // Simulate overdue
-  const todayTasks = tasks.filter((task) => !overdueTasks.includes(task));
+  const isOverdue = (task: Task) => {
+    if (!task.dueDate) return false;
+    return task.dueDate < todayStr && !isParentCompleted(task);
+  };
+
+  const isDueToday = (task: Task) => {
+    if (!task.dueDate) return false;
+    return task.dueDate === todayStr;
+  };
+
+  const overdueTasks = tasks.filter((task) => isOverdue(task));
+  const todayTasks = tasks.filter(
+    (task) => !isOverdue(task) && (isDueToday(task) || !task.dueDate)
+  );
   const completedTasks = tasks.filter((task) => isParentCompleted(task));
 
   const TaskSection = ({

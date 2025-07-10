@@ -108,6 +108,17 @@ ENHANCED FIELDS TO PROVIDE:
 - **notes**: Brief tip or context (optional, 1 sentence max)
 - **isParent**: true for parent tasks, false or undefined for subtasks
 - **subtasks**: Array of subtask objects (only for parent tasks)
+- **dueDate**: ISO date string for when task should be completed (YYYY-MM-DD format)
+- **startDate**: ISO date string for when task should be started (optional, YYYY-MM-DD format)
+
+DATE ASSIGNMENT RULES:
+- Parent tasks should have realistic due dates based on the overall timeline
+- Subtasks should have due dates that allow completion before parent due date
+- Consider dependencies between tasks when assigning dates
+- Use current date as baseline: ${new Date().toISOString().split("T")[0]}
+- Spread tasks over reasonable timeframes (don't bunch everything on same day)
+- Earlier preparation tasks should have earlier due dates
+- Execution tasks should follow preparation tasks chronologically
 
 EXAMPLES - GOOD HIERARCHICAL TASK BREAKDOWN:
 
@@ -119,30 +130,40 @@ Output: [
     "estimatedDuration": "2 hours",
     "category": "preparation",
     "isParent": true,
+    "dueDate": "2024-12-15",
+    "startDate": "2024-12-10",
     "subtasks": [
       {
         "task": "Choose party date and create guest list",
         "priority": "high",
         "estimatedDuration": "30 minutes",
-        "category": "preparation"
+        "category": "preparation",
+        "dueDate": "2024-12-10",
+        "startDate": "2024-12-10"
       },
       {
         "task": "Select and book venue or prepare home space",
         "priority": "high",
         "estimatedDuration": "45 minutes",
-        "category": "preparation"
+        "category": "preparation",
+        "dueDate": "2024-12-11",
+        "startDate": "2024-12-11"
       },
       {
         "task": "Send invitations to guests",
         "priority": "medium",
         "estimatedDuration": "30 minutes",
-        "category": "preparation"
+        "category": "preparation",
+        "dueDate": "2024-12-12",
+        "startDate": "2024-12-12"
       },
       {
         "task": "Plan party theme and decorations",
         "priority": "medium",
         "estimatedDuration": "15 minutes",
-        "category": "preparation"
+        "category": "preparation",
+        "dueDate": "2024-12-13",
+        "startDate": "2024-12-13"
       }
     ]
   },
@@ -152,24 +173,32 @@ Output: [
     "estimatedDuration": "1.5 hours",
     "category": "execution",
     "isParent": true,
+    "dueDate": "2024-12-20",
+    "startDate": "2024-12-16",
     "subtasks": [
       {
         "task": "Plan menu and create shopping list",
         "priority": "high",
         "estimatedDuration": "20 minutes",
-        "category": "preparation"
+        "category": "preparation",
+        "dueDate": "2024-12-16",
+        "startDate": "2024-12-16"
       },
       {
         "task": "Shop for food, drinks, and party supplies",
         "priority": "high",
         "estimatedDuration": "1 hour",
-        "category": "execution"
+        "category": "execution",
+        "dueDate": "2024-12-19",
+        "startDate": "2024-12-19"
       },
       {
         "task": "Prepare food and arrange beverages",
         "priority": "medium",
         "estimatedDuration": "45 minutes",
-        "category": "execution"
+        "category": "execution",
+        "dueDate": "2024-12-20",
+        "startDate": "2024-12-20"
       }
     ]
   },
@@ -179,24 +208,32 @@ Output: [
     "estimatedDuration": "1 hour",
     "category": "execution",
     "isParent": true,
+    "dueDate": "2024-12-21",
+    "startDate": "2024-12-21",
     "subtasks": [
       {
         "task": "Set up decorations and party area",
         "priority": "medium",
         "estimatedDuration": "30 minutes",
-        "category": "execution"
+        "category": "execution",
+        "dueDate": "2024-12-21",
+        "startDate": "2024-12-21"
       },
       {
         "task": "Prepare music playlist and entertainment",
         "priority": "low",
         "estimatedDuration": "15 minutes",
-        "category": "execution"
+        "category": "execution",
+        "dueDate": "2024-12-20",
+        "startDate": "2024-12-20"
       },
       {
         "task": "Clean up after party",
         "priority": "low",
         "estimatedDuration": "30 minutes",
-        "category": "follow-up"
+        "category": "follow-up",
+        "dueDate": "2024-12-21",
+        "startDate": "2024-12-21"
       }
     ]
   }
@@ -229,6 +266,8 @@ Return JSON with "tasks" array containing parent task objects with nested subtas
                 category: { type: "string" },
                 notes: { type: "string" },
                 isParent: { type: "boolean" },
+                dueDate: { type: "string" },
+                startDate: { type: "string" },
                 subtasks: {
                   type: "array",
                   items: {
@@ -243,6 +282,8 @@ Return JSON with "tasks" array containing parent task objects with nested subtas
                       estimatedDuration: { type: "string" },
                       category: { type: "string" },
                       notes: { type: "string" },
+                      dueDate: { type: "string" },
+                      startDate: { type: "string" },
                     },
                     required: ["task"],
                   },
@@ -273,6 +314,7 @@ Return JSON with "tasks" array containing parent task objects with nested subtas
   const validatedTasks: Task[] = [];
 
   parsedResponse.tasks.forEach((task, index) => {
+    const now = new Date().toISOString();
     const parentTask: Task = {
       id: uuidv4(),
       task: task.task || "Untitled task",
@@ -280,6 +322,7 @@ Return JSON with "tasks" array containing parent task objects with nested subtas
       priority: task.priority || "medium",
       isParent: task.isParent || false,
       order: index,
+      createdDate: now,
     };
 
     // Add optional fields only if they exist
@@ -287,6 +330,8 @@ Return JSON with "tasks" array containing parent task objects with nested subtas
       parentTask.estimatedDuration = task.estimatedDuration;
     if (task.category) parentTask.category = task.category;
     if (task.notes) parentTask.notes = task.notes;
+    if (task.dueDate) parentTask.dueDate = task.dueDate;
+    if (task.startDate) parentTask.startDate = task.startDate;
 
     // Handle subtasks if this is a parent task
     if (task.subtasks && Array.isArray(task.subtasks)) {
@@ -298,6 +343,7 @@ Return JSON with "tasks" array containing parent task objects with nested subtas
           priority: subtask.priority || "medium",
           parentId: parentTask.id,
           order: subtaskIndex,
+          createdDate: now,
         };
 
         // Add optional fields only if they exist
@@ -305,6 +351,8 @@ Return JSON with "tasks" array containing parent task objects with nested subtas
           validatedSubtask.estimatedDuration = subtask.estimatedDuration;
         if (subtask.category) validatedSubtask.category = subtask.category;
         if (subtask.notes) validatedSubtask.notes = subtask.notes;
+        if (subtask.dueDate) validatedSubtask.dueDate = subtask.dueDate;
+        if (subtask.startDate) validatedSubtask.startDate = subtask.startDate;
 
         return validatedSubtask;
       });
@@ -424,6 +472,7 @@ app.post(
             task: text,
             completed: false,
             priority: "medium",
+            createdDate: new Date().toISOString(),
           },
         ];
 
