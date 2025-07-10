@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import AgentInteraction from "./components/AgentInteraction";
 import TodoList from "./components/TodoList";
+import ConfirmationModal from "./components/ConfirmationModal";
 import { Task, AppState } from "./types";
 import { apiService } from "./services/api";
 import "./App.css";
@@ -13,6 +14,20 @@ const App: React.FC = () => {
   });
 
   const [activeView, setActiveView] = useState<string>("my-day");
+
+  const [confirmModal, setConfirmModal] = useState<{
+    isVisible: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    variant?: "danger" | "warning" | "info";
+    confirmText?: string;
+  }>({
+    isVisible: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
 
   // Load tasks from database on mount
   useEffect(() => {
@@ -313,15 +328,72 @@ const App: React.FC = () => {
 
   const getIncompleteTaskCount = () => {
     return state.tasks.reduce((total, task) => {
-      const parentIncomplete = task.subtasks
-        ? task.subtasks.some((subtask) => !subtask.completed)
-        : !task.completed;
-      const subtaskIncomplete = task.subtasks
-        ? task.subtasks.filter((subtask) => !subtask.completed).length
-        : 0;
-      return total + (parentIncomplete ? 1 : 0) + subtaskIncomplete;
+      if (task.subtasks && task.subtasks.length > 0) {
+        // For parent tasks with subtasks, count only the incomplete subtasks
+        return (
+          total + task.subtasks.filter((subtask) => !subtask.completed).length
+        );
+      } else {
+        // For standalone tasks, count if not completed
+        return total + (task.completed ? 0 : 1);
+      }
     }, 0);
   };
+
+  const confirmClearAllTasks = useCallback(() => {
+    const taskCount = getTotalTaskCount();
+    const message =
+      taskCount === 0
+        ? "There are currently no tasks to clear."
+        : `Are you sure you want to clear all ${taskCount} task${
+            taskCount === 1 ? "" : "s"
+          }? This action cannot be undone.`;
+
+    setConfirmModal({
+      isVisible: true,
+      title: "Clear All Tasks",
+      message,
+      onConfirm: () => {
+        clearAllTasks();
+        setConfirmModal((prev) => ({ ...prev, isVisible: false }));
+      },
+      variant: "danger",
+      confirmText: "Clear All",
+    });
+  }, [clearAllTasks, state.tasks]);
+
+  const confirmClearCompletedTasks = useCallback(() => {
+    const completedCount = state.tasks.reduce((total, task) => {
+      if (task.subtasks && task.subtasks.length > 0) {
+        // Count only completed subtasks
+        return (
+          total + task.subtasks.filter((subtask) => subtask.completed).length
+        );
+      } else {
+        // Count standalone completed tasks
+        return total + (task.completed ? 1 : 0);
+      }
+    }, 0);
+
+    const message =
+      completedCount === 0
+        ? "There are currently no completed tasks to clear."
+        : `Are you sure you want to clear ${completedCount} completed task${
+            completedCount === 1 ? "" : "s"
+          }? This action cannot be undone.`;
+
+    setConfirmModal({
+      isVisible: true,
+      title: "Clear Completed Tasks",
+      message,
+      onConfirm: () => {
+        clearCompletedTasks();
+        setConfirmModal((prev) => ({ ...prev, isVisible: false }));
+      },
+      variant: "warning",
+      confirmText: "Clear Completed",
+    });
+  }, [state.tasks, clearCompletedTasks]);
 
   const sidebarItems = [
     {
@@ -453,14 +525,21 @@ const App: React.FC = () => {
           {state.tasks.length > 0 && (
             <div className="flex gap-4 justify-center mt-8 pt-6 border-t border-gray-700 border-opacity-30">
               <button
-                onClick={clearCompletedTasks}
+                onClick={confirmClearCompletedTasks}
                 className="bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white font-medium py-2 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!state.tasks.some((task) => task.completed)}
+                disabled={
+                  !state.tasks.some((task) => {
+                    if (task.subtasks && task.subtasks.length > 0) {
+                      return task.subtasks.some((subtask) => subtask.completed);
+                    }
+                    return task.completed;
+                  })
+                }
               >
                 Clear Completed
               </button>
               <button
-                onClick={clearAllTasks}
+                onClick={confirmClearAllTasks}
                 className="bg-red-600 hover:bg-red-500 text-white font-medium py-2 px-4 rounded-lg transition-all duration-200"
               >
                 Clear All
@@ -469,6 +548,19 @@ const App: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isVisible={confirmModal.isVisible}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() =>
+          setConfirmModal((prev) => ({ ...prev, isVisible: false }))
+        }
+        variant={confirmModal.variant}
+        confirmText={confirmModal.confirmText}
+      />
     </div>
   );
 };
