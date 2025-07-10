@@ -304,9 +304,8 @@ const TodoList: React.FC<TodoListProps> = ({
                               ? "text-gray-200"
                               : "text-white"
                           }`}
-                          onClick={() => handleTextClick(task)}
-                          onDoubleClick={() => handleTextDoubleClick(task)}
-                          title="Click to refine text • Double-click to edit"
+                          onClick={() => handleTextDoubleClick(task)}
+                          title="Click to edit text"
                         >
                           {task.task}
                         </p>
@@ -318,6 +317,15 @@ const TodoList: React.FC<TodoListProps> = ({
                           title="Edit task text"
                         >
                           ✏️
+                        </button>
+
+                        {/* AI Editor button */}
+                        <button
+                          onClick={() => handleTextClick(task)}
+                          className="text-gray-500 hover:text-purple-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="AI Editor - Refine task text"
+                        >
+                          🤖
                         </button>
                       </div>
                     )}
@@ -422,19 +430,29 @@ const TodoList: React.FC<TodoListProps> = ({
                         <div className="group">
                           <div
                             className="text-sm text-gray-400 bg-gray-800 bg-opacity-50 p-3 rounded border-l-4 border-gray-600 cursor-pointer hover:bg-gray-700 hover:bg-opacity-30 transition-colors"
-                            onClick={() => handleNotesClick(task)}
-                            onDoubleClick={() => handleNotesDoubleClick(task)}
-                            title="Click to refine notes • Double-click to edit"
+                            onClick={() => handleNotesDoubleClick(task)}
+                            title="Click to edit notes"
                           >
                             💡 {task.notes}
                           </div>
-                          <button
-                            onClick={() => handleNotesDoubleClick(task)}
-                            className="text-gray-500 hover:text-blue-400 text-xs mt-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Edit notes"
-                          >
-                            ✏️ Edit notes
-                          </button>
+                          <div className="flex gap-2 mt-1">
+                            <button
+                              onClick={() => handleNotesDoubleClick(task)}
+                              className="text-gray-500 hover:text-blue-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Edit notes"
+                            >
+                              ✏️ Edit notes
+                            </button>
+
+                            {/* AI Editor button for notes */}
+                            <button
+                              onClick={() => handleNotesClick(task)}
+                              className="text-gray-500 hover:text-purple-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="AI Editor - Refine notes"
+                            >
+                              🤖 AI Editor
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
