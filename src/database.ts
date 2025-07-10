@@ -78,6 +78,20 @@ const updateTaskStmt = db.prepare(`
   WHERE id = ?
 `);
 
+const updateTaskTextStmt = db.prepare(`
+  UPDATE tasks SET 
+    task = ?, 
+    updated_at = CURRENT_TIMESTAMP 
+  WHERE id = ?
+`);
+
+const updateTaskNotesStmt = db.prepare(`
+  UPDATE tasks SET 
+    notes = ?, 
+    updated_at = CURRENT_TIMESTAMP 
+  WHERE id = ?
+`);
+
 const deleteTaskStmt = db.prepare(`
   DELETE FROM tasks WHERE id = ?
 `);
@@ -178,6 +192,18 @@ export class TaskRepository {
   // Update task completion status
   static updateTaskCompletion(id: string, completed: boolean): boolean {
     const result = updateTaskStmt.run(completed ? 1 : 0, id);
+    return result.changes > 0;
+  }
+
+  // Update task text
+  static updateTaskText(id: string, text: string): boolean {
+    const result = updateTaskTextStmt.run(text, id);
+    return result.changes > 0;
+  }
+
+  // Update task notes
+  static updateTaskNotes(id: string, notes: string): boolean {
+    const result = updateTaskNotesStmt.run(notes, id);
     return result.changes > 0;
   }
 

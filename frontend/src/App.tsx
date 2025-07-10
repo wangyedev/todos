@@ -191,6 +191,100 @@ const App: React.FC = () => {
     }
   }, []);
 
+  const handleUpdateTaskText = useCallback(
+    async (taskId: string, newText: string) => {
+      try {
+        // Update in database
+        await apiService.updateTaskText(taskId, newText);
+
+        // Update local state
+        setState((prev) => ({
+          ...prev,
+          tasks: prev.tasks.map((task) => {
+            // If updating a parent task
+            if (task.id === taskId) {
+              return {
+                ...task,
+                task: newText,
+              };
+            }
+
+            // If updating a subtask, update it within the parent
+            if (task.subtasks) {
+              const updatedSubtasks = task.subtasks.map((subtask) =>
+                subtask.id === taskId ? { ...subtask, task: newText } : subtask
+              );
+
+              // Check if this subtask update affects the parent
+              const hasUpdatedSubtask = task.subtasks.some(
+                (s) => s.id === taskId
+              );
+              if (hasUpdatedSubtask) {
+                return {
+                  ...task,
+                  subtasks: updatedSubtasks,
+                };
+              }
+            }
+
+            return task;
+          }),
+        }));
+      } catch (error) {
+        console.error("Failed to update task text:", error);
+      }
+    },
+    []
+  );
+
+  const handleUpdateTaskNotes = useCallback(
+    async (taskId: string, newNotes: string) => {
+      try {
+        // Update in database
+        await apiService.updateTaskNotes(taskId, newNotes);
+
+        // Update local state
+        setState((prev) => ({
+          ...prev,
+          tasks: prev.tasks.map((task) => {
+            // If updating a parent task
+            if (task.id === taskId) {
+              return {
+                ...task,
+                notes: newNotes,
+              };
+            }
+
+            // If updating a subtask, update it within the parent
+            if (task.subtasks) {
+              const updatedSubtasks = task.subtasks.map((subtask) =>
+                subtask.id === taskId
+                  ? { ...subtask, notes: newNotes }
+                  : subtask
+              );
+
+              // Check if this subtask update affects the parent
+              const hasUpdatedSubtask = task.subtasks.some(
+                (s) => s.id === taskId
+              );
+              if (hasUpdatedSubtask) {
+                return {
+                  ...task,
+                  subtasks: updatedSubtasks,
+                };
+              }
+            }
+
+            return task;
+          }),
+        }));
+      } catch (error) {
+        console.error("Failed to update task notes:", error);
+      }
+    },
+    []
+  );
+
   const getCurrentDate = () => {
     const now = new Date();
     const options: Intl.DateTimeFormatOptions = {
@@ -352,6 +446,8 @@ const App: React.FC = () => {
             tasks={state.tasks}
             onDeleteTask={handleDeleteTask}
             onToggleTask={handleToggleTask}
+            onUpdateTaskText={handleUpdateTaskText}
+            onUpdateTaskNotes={handleUpdateTaskNotes}
           />
 
           {state.tasks.length > 0 && (

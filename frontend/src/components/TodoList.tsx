@@ -1,18 +1,47 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { Task } from "../types";
+import TextRefinementTooltip from "./TextRefinementTooltip";
+import NotesRefinementTooltip from "./NotesRefinementTooltip";
 
 interface TodoListProps {
   tasks: Task[];
   onDeleteTask: (id: string) => void;
   onToggleTask: (id: string) => void;
+  onUpdateTaskText: (id: string, newText: string) => void;
+  onUpdateTaskNotes: (id: string, newNotes: string) => void;
 }
 
 const TodoList: React.FC<TodoListProps> = ({
   tasks,
   onDeleteTask,
   onToggleTask,
+  onUpdateTaskText,
+  onUpdateTaskNotes,
 }) => {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState<string>("");
+  const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
+  const [editingNotes, setEditingNotes] = useState<string>("");
+  const [textRefinementTooltip, setTextRefinementTooltip] = useState<{
+    isVisible: boolean;
+    taskId: string;
+    text: string;
+  }>({
+    isVisible: false,
+    taskId: "",
+    text: "",
+  });
+  const [notesRefinementTooltip, setNotesRefinementTooltip] = useState<{
+    isVisible: boolean;
+    taskId: string;
+    notes: string;
+  }>({
+    isVisible: false,
+    taskId: "",
+    notes: "",
+  });
+  const taskTextRef = useRef<HTMLDivElement>(null);
 
   const toggleExpanded = (taskId: string) => {
     setExpandedTasks((prev) => {
@@ -24,6 +53,114 @@ const TodoList: React.FC<TodoListProps> = ({
       }
       return newSet;
     });
+  };
+
+  const handleTextClick = (task: Task) => {
+    setTextRefinementTooltip({
+      isVisible: true,
+      taskId: task.id,
+      text: task.task,
+    });
+  };
+
+  const handleTextDoubleClick = (task: Task) => {
+    setEditingTaskId(task.id);
+    setEditingText(task.task);
+  };
+
+  const handleEditingTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEditingText(e.target.value);
+  };
+
+  const handleEditingKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      handleSaveEdit();
+    } else if (e.key === "Escape") {
+      handleCancelEdit();
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (editingTaskId && editingText.trim()) {
+      try {
+        await onUpdateTaskText(editingTaskId, editingText.trim());
+        setEditingTaskId(null);
+        setEditingText("");
+      } catch (error) {
+        console.error("Failed to update task text:", error);
+      }
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingTaskId(null);
+    setEditingText("");
+  };
+
+  const handleNotesClick = (task: Task) => {
+    setNotesRefinementTooltip({
+      isVisible: true,
+      taskId: task.id,
+      notes: task.notes || "",
+    });
+  };
+
+  const handleNotesDoubleClick = (task: Task) => {
+    setEditingNotesId(task.id);
+    setEditingNotes(task.notes || "");
+  };
+
+  const handleEditingNotesChange = (
+    e: React.ChangeEvent<HTMLTextAreaElement>
+  ) => {
+    setEditingNotes(e.target.value);
+  };
+
+  const handleEditingNotesKeyPress = (
+    e: React.KeyboardEvent<HTMLTextAreaElement>
+  ) => {
+    if (e.key === "Enter" && e.ctrlKey) {
+      handleSaveNotesEdit();
+    } else if (e.key === "Escape") {
+      handleCancelNotesEdit();
+    }
+  };
+
+  const handleSaveNotesEdit = async () => {
+    if (editingNotesId) {
+      try {
+        await onUpdateTaskNotes(editingNotesId, editingNotes.trim());
+        setEditingNotesId(null);
+        setEditingNotes("");
+      } catch (error) {
+        console.error("Failed to update task notes:", error);
+      }
+    }
+  };
+
+  const handleCancelNotesEdit = () => {
+    setEditingNotesId(null);
+    setEditingNotes("");
+  };
+
+  const handleRefinedTextSelect = (refinedText: string) => {
+    if (textRefinementTooltip.taskId) {
+      onUpdateTaskText(textRefinementTooltip.taskId, refinedText);
+    }
+  };
+
+  const handleRefinedNotesSelect = (refinedNotes: string) => {
+    if (notesRefinementTooltip.taskId) {
+      onUpdateTaskNotes(notesRefinementTooltip.taskId, refinedNotes);
+    }
+  };
+
+  const closeTextRefinementTooltip = () => {
+    setTextRefinementTooltip((prev) => ({ ...prev, isVisible: false }));
+  };
+
+  const closeNotesRefinementTooltip = () => {
+    setNotesRefinementTooltip((prev) => ({ ...prev, isVisible: false }));
   };
 
   const getPriorityColor = (priority?: string) => {
@@ -83,7 +220,7 @@ const TodoList: React.FC<TodoListProps> = ({
     return (
       <div className={`${isSubtask ? "ml-8" : ""}`}>
         <div
-          className={`task-item ${isCompleted ? "completed" : ""} ${
+          className={`task-item group ${isCompleted ? "completed" : ""} ${
             taskIsOverdue
               ? "border-red-500 border-opacity-50"
               : taskIsDueToday
@@ -129,17 +266,61 @@ const TodoList: React.FC<TodoListProps> = ({
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <p
-                      className={`text-base leading-6 font-medium ${
-                        isCompleted
-                          ? "line-through text-gray-500"
-                          : isSubtask
-                          ? "text-gray-200"
-                          : "text-white"
-                      }`}
-                    >
-                      {task.task}
-                    </p>
+                    {/* Task text - editable */}
+                    {editingTaskId === task.id ? (
+                      <div className="flex-1 flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={editingText}
+                          onChange={handleEditingTextChange}
+                          onKeyDown={handleEditingKeyPress}
+                          onBlur={handleSaveEdit}
+                          className="flex-1 bg-gray-800 text-white px-2 py-1 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+                          autoFocus
+                        />
+                        <button
+                          onClick={handleSaveEdit}
+                          className="text-green-400 hover:text-green-300 p-1"
+                          title="Save"
+                        >
+                          ✓
+                        </button>
+                        <button
+                          onClick={handleCancelEdit}
+                          className="text-red-400 hover:text-red-300 p-1"
+                          title="Cancel"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex items-center gap-2">
+                        <p
+                          ref={taskTextRef}
+                          className={`text-base leading-6 font-medium cursor-pointer hover:bg-gray-700 hover:bg-opacity-30 px-2 py-1 rounded transition-colors ${
+                            isCompleted
+                              ? "line-through text-gray-500"
+                              : isSubtask
+                              ? "text-gray-200"
+                              : "text-white"
+                          }`}
+                          onClick={() => handleTextClick(task)}
+                          onDoubleClick={() => handleTextDoubleClick(task)}
+                          title="Click to refine text • Double-click to edit"
+                        >
+                          {task.task}
+                        </p>
+
+                        {/* Edit button */}
+                        <button
+                          onClick={() => handleTextDoubleClick(task)}
+                          className="text-gray-500 hover:text-blue-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Edit task text"
+                        >
+                          ✏️
+                        </button>
+                      </div>
+                    )}
 
                     {/* Parent task indicator */}
                     {!isSubtask &&
@@ -206,10 +387,68 @@ const TodoList: React.FC<TodoListProps> = ({
                   </div>
 
                   {/* Task notes */}
-                  {task.notes && (
-                    <div className="mt-2 text-sm text-gray-400 bg-gray-800 bg-opacity-50 p-3 rounded border-l-4 border-gray-600">
-                      💡 {task.notes}
+                  {(task.notes || editingNotesId === task.id) && (
+                    <div className="mt-2">
+                      {editingNotesId === task.id ? (
+                        <div className="flex flex-col gap-2">
+                          <textarea
+                            value={editingNotes}
+                            onChange={handleEditingNotesChange}
+                            onKeyDown={handleEditingNotesKeyPress}
+                            onBlur={handleSaveNotesEdit}
+                            className="text-sm bg-gray-800 text-white px-3 py-2 rounded border border-gray-600 focus:border-blue-500 focus:outline-none resize-none"
+                            rows={3}
+                            placeholder="Add notes..."
+                            autoFocus
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={handleSaveNotesEdit}
+                              className="text-green-400 hover:text-green-300 text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
+                              title="Save (Ctrl+Enter)"
+                            >
+                              ✓ Save
+                            </button>
+                            <button
+                              onClick={handleCancelNotesEdit}
+                              className="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
+                              title="Cancel (Esc)"
+                            >
+                              ✕ Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="group">
+                          <div
+                            className="text-sm text-gray-400 bg-gray-800 bg-opacity-50 p-3 rounded border-l-4 border-gray-600 cursor-pointer hover:bg-gray-700 hover:bg-opacity-30 transition-colors"
+                            onClick={() => handleNotesClick(task)}
+                            onDoubleClick={() => handleNotesDoubleClick(task)}
+                            title="Click to refine notes • Double-click to edit"
+                          >
+                            💡 {task.notes}
+                          </div>
+                          <button
+                            onClick={() => handleNotesDoubleClick(task)}
+                            className="text-gray-500 hover:text-blue-400 text-xs mt-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Edit notes"
+                          >
+                            ✏️ Edit notes
+                          </button>
+                        </div>
+                      )}
                     </div>
+                  )}
+
+                  {/* Add notes button when no notes exist */}
+                  {!task.notes && editingNotesId !== task.id && (
+                    <button
+                      onClick={() => handleNotesDoubleClick(task)}
+                      className="mt-2 text-xs text-gray-500 hover:text-blue-400 transition-colors"
+                      title="Add notes"
+                    >
+                      💡 Add notes
+                    </button>
                   )}
                 </div>
 
@@ -330,6 +569,22 @@ const TodoList: React.FC<TodoListProps> = ({
           color="text-green-400"
         />
       )}
+
+      {/* Text Refinement Tooltip */}
+      <TextRefinementTooltip
+        text={textRefinementTooltip.text}
+        isVisible={textRefinementTooltip.isVisible}
+        onClose={closeTextRefinementTooltip}
+        onRefinedTextSelect={handleRefinedTextSelect}
+      />
+
+      {/* Notes Refinement Tooltip */}
+      <NotesRefinementTooltip
+        notes={notesRefinementTooltip.notes}
+        isVisible={notesRefinementTooltip.isVisible}
+        onClose={closeNotesRefinementTooltip}
+        onRefinedNotesSelect={handleRefinedNotesSelect}
+      />
     </div>
   );
 };

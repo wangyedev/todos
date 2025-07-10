@@ -73,6 +73,20 @@ const generateTasksSchema = Joi.object({
   text: Joi.string().min(1).max(1000).required(),
 });
 
+const refineTaskTextSchema = Joi.object({
+  text: Joi.string().min(1).max(500).required(),
+  refinementType: Joi.string()
+    .valid("formal", "concise", "detailed", "casual")
+    .required(),
+});
+
+const refineTaskNotesSchema = Joi.object({
+  notes: Joi.string().min(1).max(1000).required(),
+  refinementType: Joi.string()
+    .valid("formal", "concise", "detailed", "casual")
+    .required(),
+});
+
 // Shared task generation function
 async function generateTasksFromText(inputText: string): Promise<Task[]> {
   const taskPrompt = `You are an intelligent task management assistant. Your role is to break down user requests into HIERARCHICAL task structures with parent tasks and subtasks.
@@ -633,6 +647,142 @@ app.post(
   }
 );
 
+// POST /api/refine-task-text - Refine task text using LLM
+app.post(
+  "/api/refine-task-text",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      // Validate input
+      const { error, value } = refineTaskTextSchema.validate(req.body);
+      if (error) {
+        res.status(400).json({ error: error.details[0]?.message } as any);
+        return;
+      }
+
+      const { text, refinementType } = value;
+      console.log("Refining text:", text, "Type:", refinementType);
+
+      let prompt = "";
+      switch (refinementType) {
+        case "formal":
+          prompt = `Please rewrite this task in a more formal, professional tone while keeping the same meaning and action. Make it sound more business-like and structured.
+
+Original task: "${text}"
+
+Return only the refined task text, no explanations or additional commentary.`;
+          break;
+        case "concise":
+          prompt = `Please rewrite this task to be more concise and to-the-point while keeping the same meaning and action. Remove any unnecessary words and make it more direct.
+
+Original task: "${text}"
+
+Return only the refined task text, no explanations or additional commentary.`;
+          break;
+        case "detailed":
+          prompt = `Please rewrite this task to be more detailed and comprehensive while keeping the same core action. Add helpful context and clarity to make the task more actionable.
+
+Original task: "${text}"
+
+Return only the refined task text, no explanations or additional commentary.`;
+          break;
+        case "casual":
+          prompt = `Please rewrite this task in a more casual, friendly tone while keeping the same meaning and action. Make it sound more relaxed and conversational.
+
+Original task: "${text}"
+
+Return only the refined task text, no explanations or additional commentary.`;
+          break;
+      }
+
+      // Generate refined text using Gemini API
+      const result = await genAI.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+      });
+
+      const refinedText = result.text?.trim() || text;
+      console.log("Refined text:", refinedText);
+
+      res.json({
+        originalText: text,
+        refinedText: refinedText,
+        refinementType: refinementType,
+      });
+    } catch (error) {
+      console.error("Text refinement error:", error);
+      handleError(res, error, "Failed to refine text");
+    }
+  }
+);
+
+// POST /api/refine-task-notes - Refine task notes using LLM
+app.post(
+  "/api/refine-task-notes",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      // Validate input
+      const { error, value } = refineTaskNotesSchema.validate(req.body);
+      if (error) {
+        res.status(400).json({ error: error.details[0]?.message } as any);
+        return;
+      }
+
+      const { notes, refinementType } = value;
+      console.log("Refining notes:", notes, "Type:", refinementType);
+
+      let prompt = "";
+      switch (refinementType) {
+        case "formal":
+          prompt = `Please rewrite these task notes in a more formal, professional tone while keeping the same meaning and information. Make them sound more business-like and structured.
+
+Original notes: "${notes}"
+
+Return only the refined notes text, no explanations or additional commentary.`;
+          break;
+        case "concise":
+          prompt = `Please rewrite these task notes to be more concise and to-the-point while keeping the same meaning and key information. Remove any unnecessary words and make them more direct.
+
+Original notes: "${notes}"
+
+Return only the refined notes text, no explanations or additional commentary.`;
+          break;
+        case "detailed":
+          prompt = `Please rewrite these task notes to be more detailed and comprehensive while keeping the same core information. Add helpful context and clarity to make the notes more useful.
+
+Original notes: "${notes}"
+
+Return only the refined notes text, no explanations or additional commentary.`;
+          break;
+        case "casual":
+          prompt = `Please rewrite these task notes in a more casual, friendly tone while keeping the same meaning and information. Make them sound more relaxed and conversational.
+
+Original notes: "${notes}"
+
+Return only the refined notes text, no explanations or additional commentary.`;
+          break;
+      }
+
+      // Generate refined notes using Gemini API
+      const result = await genAI.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+      });
+
+      const refinedNotes = result.text?.trim() || notes;
+      console.log("Refined notes:", refinedNotes);
+
+      res.json({
+        originalNotes: notes,
+        refinedNotes: refinedNotes,
+        refinementType: refinementType,
+      });
+    } catch (error) {
+      console.error("Notes refinement error:", error);
+      handleError(res, error, "Failed to refine notes");
+    }
+  }
+);
+
 // GET /api/tasks - Get all tasks
 app.get(
   "/api/tasks",
@@ -687,6 +837,60 @@ app.put(
       res.json({ success: true });
     } catch (error) {
       handleError(res, error, "Failed to update task");
+    }
+  }
+);
+
+// PUT /api/tasks/:id/text - Update task text
+app.put(
+  "/api/tasks/:id/text",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { text } = req.body;
+      if (!id) {
+        res.status(400).json({ error: "Task ID is required" } as ErrorResponse);
+        return;
+      }
+      if (!text || text.trim().length === 0) {
+        res
+          .status(400)
+          .json({ error: "Task text is required" } as ErrorResponse);
+        return;
+      }
+      const success = TaskRepository.updateTaskText(id, text.trim());
+      if (!success) {
+        res.status(404).json({ error: "Task not found" } as ErrorResponse);
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      handleError(res, error, "Failed to update task text");
+    }
+  }
+);
+
+// PUT /api/tasks/:id/notes - Update task notes
+app.put(
+  "/api/tasks/:id/notes",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { notes } = req.body;
+      if (!id) {
+        res.status(400).json({ error: "Task ID is required" } as ErrorResponse);
+        return;
+      }
+      // Allow empty notes to clear them
+      const notesValue = notes || "";
+      const success = TaskRepository.updateTaskNotes(id, notesValue);
+      if (!success) {
+        res.status(404).json({ error: "Task not found" } as ErrorResponse);
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      handleError(res, error, "Failed to update task notes");
     }
   }
 );

@@ -303,6 +303,98 @@ export const apiService = {
         : new ApiError("Failed to clear completed tasks");
     }
   },
+
+  async updateTaskText(
+    id: string,
+    text: string
+  ): Promise<{ success: boolean }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/${id}/text`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text }),
+      });
+      return await handleApiResponse(response);
+    } catch (error) {
+      console.error("Error updating task text:", error);
+      throw error instanceof ApiError
+        ? error
+        : new ApiError("Failed to update task text");
+    }
+  },
+
+  async refineTaskText(
+    text: string,
+    refinementType: "formal" | "concise" | "detailed" | "casual"
+  ): Promise<{
+    originalText: string;
+    refinedText: string;
+    refinementType: string;
+  }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/refine-task-text`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text, refinementType }),
+      });
+      return await handleApiResponse(response);
+    } catch (error) {
+      console.error("Error refining task text:", error);
+      throw error instanceof ApiError
+        ? error
+        : new ApiError("Failed to refine task text");
+    }
+  },
+
+  async updateTaskNotes(
+    id: string,
+    notes: string
+  ): Promise<{ success: boolean }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/${id}/notes`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ notes }),
+      });
+      return await handleApiResponse(response);
+    } catch (error) {
+      console.error("Error updating task notes:", error);
+      throw error instanceof ApiError
+        ? error
+        : new ApiError("Failed to update task notes");
+    }
+  },
+
+  async refineTaskNotes(
+    notes: string,
+    refinementType: "formal" | "concise" | "detailed" | "casual"
+  ): Promise<{
+    originalNotes: string;
+    refinedNotes: string;
+    refinementType: string;
+  }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/refine-task-notes`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ notes, refinementType }),
+      });
+      return await handleApiResponse(response);
+    } catch (error) {
+      console.error("Error refining task notes:", error);
+      throw error instanceof ApiError
+        ? error
+        : new ApiError("Failed to refine task notes");
+    }
+  },
 };
 
 export { ApiError };
