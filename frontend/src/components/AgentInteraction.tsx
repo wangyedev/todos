@@ -109,75 +109,70 @@ const AgentInteraction: React.FC<AgentInteractionProps> = ({
   const currentlyLoading = isLoading || state.isLoading;
 
   return (
-    <div className="text-center text-white">
-      <div className="mb-8">
-        <h1 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-white to-gray-200 bg-clip-text text-transparent">
-          🤖 AI Task Agent
-        </h1>
-        <p className="text-xl md:text-2xl mb-8 text-white text-opacity-90">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="text-center">
+        <h2 className="text-2xl font-bold text-white mb-2 flex items-center justify-center gap-2">
+          <span className="text-blue-400">🤖</span>
+          AI Task Agent
+        </h2>
+        <p className="text-gray-400">
           Tell me what you need to do, and I'll organize it into tasks for you.
         </p>
       </div>
 
-      <div className="max-w-2xl mx-auto">
-        <form onSubmit={handleTextSubmit} className="mb-8">
-          <div className="flex flex-col gap-4">
-            <textarea
-              value={state.inputText}
-              onChange={handleInputChange}
-              placeholder="Type your tasks here... (e.g., 'I need to email the team, buy groceries, and schedule a meeting')"
-              className="input-field w-full min-h-[120px] resize-y"
-              rows={4}
-              disabled={currentlyLoading}
-            />
+      {/* Input Form */}
+      <form onSubmit={handleTextSubmit} className="space-y-4">
+        <div className="flex gap-3">
+          <textarea
+            value={state.inputText}
+            onChange={handleInputChange}
+            placeholder="Type your tasks here... (e.g., 'I need to email the team, buy groceries, and schedule a meeting')"
+            className="input-field flex-1 min-h-[100px] resize-none"
+            rows={3}
+            disabled={currentlyLoading}
+          />
+          <div className="flex flex-col gap-2">
             <button
               type="submit"
               disabled={currentlyLoading || !state.inputText.trim()}
-              className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed text-lg"
+              className="btn-primary px-6 py-3 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
             >
-              {currentlyLoading ? "Processing..." : "Generate Tasks"}
+              {currentlyLoading ? "..." : "Generate"}
             </button>
-          </div>
-        </form>
 
-        <div className="relative my-8 text-center">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-white border-opacity-20"></div>
-          </div>
-          <div className="relative">
-            <span className="bg-gradient-to-r from-primary-500 to-secondary-500 bg-clip-text text-transparent font-medium px-4">
-              OR
-            </span>
+            {/* Voice Input */}
+            <div className="flex justify-center">
+              <AudioRecorder
+                onAudioSubmit={handleAudioSubmit}
+                onTasksGenerated={onTasksGenerated}
+                onStreamingUpdate={handleStreamingUpdate}
+                disabled={currentlyLoading}
+                useStreaming={true}
+              />
+            </div>
           </div>
         </div>
+      </form>
 
-        <div className="voice-input-section">
-          <AudioRecorder
-            onAudioSubmit={handleAudioSubmit}
-            onTasksGenerated={onTasksGenerated}
-            onStreamingUpdate={handleStreamingUpdate}
-            disabled={currentlyLoading}
-            useStreaming={true}
-          />
-        </div>
+      {/* Streaming transcription UI */}
+      <StreamingTranscription streamingState={streamingState} />
 
-        {/* Streaming transcription UI */}
-        <StreamingTranscription streamingState={streamingState} />
-      </div>
-
+      {/* Error Display */}
       {state.error && (
         <div
-          className="mt-6 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg text-red-200 text-center max-w-2xl mx-auto"
+          className="p-4 bg-red-600 bg-opacity-20 border border-red-500 border-opacity-30 rounded-lg text-red-300 text-sm"
           role="alert"
         >
           <strong>Error:</strong> {state.error}
         </div>
       )}
 
+      {/* Loading State */}
       {currentlyLoading && (
-        <div className="mt-6 text-center text-white">
-          <div className="inline-block w-10 h-10 border-4 border-white border-opacity-30 border-t-white rounded-full animate-spin mb-4"></div>
-          <p className="text-lg">Processing your request...</p>
+        <div className="text-center text-gray-400">
+          <div className="inline-block w-6 h-6 border-2 border-gray-400 border-t-blue-400 rounded-full animate-spin mb-2"></div>
+          <p className="text-sm">Processing your request...</p>
         </div>
       )}
     </div>

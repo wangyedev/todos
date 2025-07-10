@@ -243,21 +243,21 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
         onClick={toggleRecording}
         disabled={isDisabled}
         className={`
-          inline-flex items-center gap-4 px-8 py-6 rounded-3xl font-medium text-lg transition-all duration-300 shadow-lg hover:shadow-xl min-w-[200px]
+          inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 shadow-lg hover:shadow-xl
           ${
             state.isRecording
-              ? "bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white animate-pulse"
+              ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
               : isDisabled
-              ? "bg-white bg-opacity-10 text-white text-opacity-50 cursor-not-allowed"
-              : "bg-gradient-to-r from-green-500 to-cyan-500 hover:from-green-600 hover:to-cyan-600 text-white hover:-translate-y-1"
+              ? "bg-gray-700 bg-opacity-50 text-gray-400 cursor-not-allowed"
+              : "bg-blue-500 hover:bg-blue-600 text-white hover:scale-105"
           }
         `}
         aria-label={state.isRecording ? "Stop recording" : "Start recording"}
       >
-        <div className="flex items-center justify-center text-2xl">
+        <div className="flex items-center justify-center text-lg">
           {state.isRecording ? (
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-red-200 rounded-full animate-pulse"></div>
+            <div className="flex items-center gap-1">
+              <div className="w-1.5 h-1.5 bg-red-200 rounded-full animate-pulse"></div>
               <span>🎙️</span>
             </div>
           ) : state.isProcessing ? (
@@ -268,16 +268,16 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
         </div>
         <span>
           {state.isRecording
-            ? "Stop Recording"
+            ? "Stop"
             : state.isProcessing
             ? "Processing..."
-            : "Record Voice"}
+            : "Voice"}
         </span>
       </button>
 
       {state.error && (
         <div
-          className="mt-4 p-3 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg text-red-200 text-center max-w-md mx-auto"
+          className="mt-3 p-2 bg-red-600 bg-opacity-20 border border-red-500 border-opacity-30 rounded text-red-300 text-xs max-w-xs mx-auto"
           role="alert"
         >
           {state.error}

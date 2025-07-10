@@ -2,6 +2,10 @@ export interface Task {
   id: string;
   task: string;
   completed: boolean;
+  priority?: "low" | "medium" | "high";
+  estimatedDuration?: string;
+  category?: string;
+  notes?: string;
 }
 
 export interface GenerateTasksRequest {
@@ -44,5 +48,9 @@ export interface StructuredTaskResponse {
   tasks: Array<{
     id: number;
     task: string;
+    priority?: "low" | "medium" | "high";
+    estimatedDuration?: string;
+    category?: string;
+    notes?: string;
   }>;
 }

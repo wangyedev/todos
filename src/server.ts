@@ -72,6 +72,170 @@ const generateTasksSchema = Joi.object({
   text: Joi.string().min(1).max(1000).required(),
 });
 
+// Shared task generation function
+async function generateTasksFromText(inputText: string): Promise<Task[]> {
+  const taskPrompt = `You are an intelligent task management assistant. Your role is to break down user requests into MULTIPLE separate, actionable tasks that can be completed individually.
+
+CRITICAL REQUIREMENTS:
+1. **CREATE MULTIPLE TASKS** - Always break requests into several discrete, actionable items
+2. **KEEP TASKS CONCISE** - Each task should be 1-2 sentences maximum, not paragraphs
+3. **ONE ACTION PER TASK** - Each task should represent a single, specific action
+4. **LOGICAL SEQUENCE** - Order tasks in a logical workflow when possible
+
+TASK BREAKDOWN APPROACH:
+- Identify the main goal from user input
+- Break complex objectives into 3-8 separate preparatory and execution steps
+- Each step should be independently actionable
+- Include both preparation tasks and execution tasks
+- Add follow-up tasks when relevant
+
+TASK QUALITY STANDARDS:
+- **Concise**: 1-2 sentences maximum per task
+- **Specific**: Clear action verb and outcome
+- **Actionable**: Can be completed in a single focused session
+- **Independent**: Can be done without completing other tasks simultaneously
+
+ENHANCED FIELDS TO PROVIDE:
+- **task**: Brief, specific action (1-2 sentences max)
+- **priority**: "high", "medium", or "low" based on urgency
+- **estimatedDuration**: Realistic time estimate ("15 min", "1 hour", "2 hours")
+- **category**: Logical grouping ("preparation", "execution", "follow-up", "research")
+- **notes**: Brief tip or context (optional, 1 sentence max)
+
+EXAMPLES - GOOD TASK BREAKDOWN:
+
+Input: "Buy groceries"
+Output: [
+  {
+    "task": "Check pantry and fridge to create shopping list",
+    "priority": "high",
+    "estimatedDuration": "10 minutes",
+    "category": "preparation"
+  },
+  {
+    "task": "Research weekly meal plan and add ingredients to list",
+    "priority": "medium", 
+    "estimatedDuration": "15 minutes",
+    "category": "preparation"
+  },
+  {
+    "task": "Go to grocery store and purchase items on list",
+    "priority": "high",
+    "estimatedDuration": "45 minutes", 
+    "category": "execution"
+  },
+  {
+    "task": "Organize and store groceries properly",
+    "priority": "medium",
+    "estimatedDuration": "10 minutes",
+    "category": "execution"
+  }
+]
+
+Input: "Prepare for job interview"
+Output: [
+  {
+    "task": "Research the company background and recent news",
+    "priority": "high",
+    "estimatedDuration": "30 minutes",
+    "category": "preparation"
+  },
+  {
+    "task": "Review job description and match skills to requirements",
+    "priority": "high", 
+    "estimatedDuration": "20 minutes",
+    "category": "preparation"
+  },
+  {
+    "task": "Prepare answers to common interview questions",
+    "priority": "high",
+    "estimatedDuration": "45 minutes",
+    "category": "preparation"
+  },
+  {
+    "task": "Choose and prepare professional outfit",
+    "priority": "medium",
+    "estimatedDuration": "15 minutes",
+    "category": "preparation"
+  },
+  {
+    "task": "Print resume copies and gather required documents",
+    "priority": "medium",
+    "estimatedDuration": "10 minutes",
+    "category": "preparation"
+  }
+]
+
+User input: "${inputText}"
+
+Break down this request into 3-8 separate, concise tasks. Each task should be independently actionable and 1-2 sentences maximum. Focus on creating a logical workflow from preparation to execution to follow-up.
+
+Return JSON with "tasks" array containing separate task objects with the specified fields.`;
+
+  // Generate response using Gemini API
+  const result = await genAI.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: taskPrompt,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "object",
+        properties: {
+          tasks: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "number" },
+                task: { type: "string" },
+                priority: { type: "string", enum: ["low", "medium", "high"] },
+                estimatedDuration: { type: "string" },
+                category: { type: "string" },
+                notes: { type: "string" },
+              },
+              required: ["id", "task"],
+            },
+          },
+        },
+        required: ["tasks"],
+      },
+    },
+  });
+
+  const generatedText = result.text || "";
+  console.log("Task generation response:", generatedText);
+
+  // Parse and validate the response
+  const cleanResponse = generatedText.replace(/```json\n?|\n?```/g, "").trim();
+
+  const parsedResponse = JSON.parse(cleanResponse) as StructuredTaskResponse;
+
+  if (!parsedResponse.tasks || !Array.isArray(parsedResponse.tasks)) {
+    throw new Error("Invalid task structure");
+  }
+
+  // Validate and format tasks
+  const validatedTasks: Task[] = parsedResponse.tasks.map((task) => {
+    const validatedTask: Task = {
+      id: uuidv4(),
+      task: task.task || "Untitled task",
+      completed: false,
+      priority: task.priority || "medium",
+    };
+
+    // Add optional fields only if they exist
+    if (task.estimatedDuration)
+      validatedTask.estimatedDuration = task.estimatedDuration;
+    if (task.category) validatedTask.category = task.category;
+    if (task.notes) validatedTask.notes = task.notes;
+
+    return validatedTask;
+  });
+
+  console.log("Validated tasks:", validatedTasks);
+  return validatedTasks;
+}
+
 // Utility function to handle API errors
 const handleError = (
   res: Response,
@@ -165,79 +329,12 @@ app.post(
       const { text } = value;
       console.log("Received text for task generation:", text);
 
-      // Craft the prompt for task extraction
-      const prompt = `You are a hyper-efficient AI assistant. Your sole function is to analyze the user's command and extract all identifiable tasks.
-
-Analyze the following user command and extract all identifiable tasks. Return them in a JSON object with a "tasks" array. Each task should have a unique numeric id and a clear task description.
-
-If the user's command doesn't contain any clear tasks (e.g., just greetings, testing, or unclear requests), return an empty tasks array.
-
-User command: "${text}"
-
-Extract all tasks and return them in the specified JSON format.`;
-
-      // Generate response using new API
-      const result = await genAI.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "object",
-            properties: {
-              tasks: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    id: { type: "number" },
-                    task: { type: "string" },
-                  },
-                  required: ["id", "task"],
-                },
-              },
-            },
-            required: ["tasks"],
-          },
-        },
-      });
-
-      const generatedText = result.text || "";
-      console.log("Gemini response for task generation:", generatedText);
-
       try {
-        // Parse the structured JSON response
-        const parsedResponse = JSON.parse(
-          generatedText
-        ) as StructuredTaskResponse;
-        console.log("Parsed structured response:", parsedResponse);
-
-        // Extract tasks from the structured response
-        const tasks = parsedResponse.tasks || [];
-        console.log("Extracted tasks:", tasks);
-
-        // Validate the response format
-        if (!Array.isArray(tasks)) {
-          throw new Error("Tasks is not an array");
-        }
-
-        // Ensure each task has the required fields and add completed property
-        const validatedTasks: Task[] = tasks.map((task) => {
-          return {
-            id: uuidv4(),
-            task: task.task || "Untitled task",
-            completed: false,
-          };
-        });
-
-        console.log("Validated tasks:", validatedTasks);
-        res.json(validatedTasks);
+        // Use the shared function to generate tasks
+        const tasks = await generateTasksFromText(text);
+        res.json(tasks);
       } catch (parseError) {
-        console.error(
-          "Failed to parse Gemini structured response:",
-          generatedText
-        );
-        console.error("Parse error:", parseError);
+        console.error("Failed to parse task response:", parseError);
 
         // Fallback: create a single task from the original text
         const fallbackTasks: Task[] = [
@@ -245,6 +342,7 @@ Extract all tasks and return them in the specified JSON format.`;
             id: uuidv4(),
             task: text,
             completed: false,
+            priority: "medium",
           },
         ];
 
@@ -356,81 +454,22 @@ app.post(
         })}\n\n`
       );
 
-      // Generate tasks with native streaming using structured output
-      const taskPrompt = `You are a hyper-efficient AI assistant. Your sole function is to analyze the user's command and extract all identifiable tasks.
-
-Analyze the following user command and extract all identifiable tasks. Return them in a JSON object with a "tasks" array. Each task should have a unique numeric id and a clear task description.
-
-If the user's command doesn't contain any clear tasks (e.g., just greetings, testing, or unclear requests), return an empty tasks array.
-
-User command: "${fullTranscription}"
-
-Extract all tasks and return them in the specified JSON format.`;
-
-      const taskResult = await genAI.models.generateContentStream({
-        model: "gemini-2.5-flash",
-        contents: taskPrompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "object",
-            properties: {
-              tasks: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    id: { type: "number" },
-                    task: { type: "string" },
-                  },
-                  required: ["id", "task"],
-                },
-              },
-            },
-            required: ["tasks"],
-          },
-        },
-      });
-
-      let fullTaskResponse = "";
-
-      // Stream task generation chunks
-      for await (const chunk of taskResult) {
-        const chunkText = chunk.text;
-        if (chunkText) {
-          fullTaskResponse += chunkText;
-
-          // Send task generation chunk
-          res.write(
-            `data: ${JSON.stringify({
-              phase: "generating",
-              text: chunkText,
-              fullText: fullTaskResponse,
-            })}\n\n`
-          );
-
-          // Small delay for better UX
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
-      }
-
-      // Parse and validate the final response
-      let tasksData: StructuredTaskResponse;
       try {
-        // Clean the response (remove any markdown formatting)
-        const cleanResponse = fullTaskResponse
-          .replace(/```json\n?|\n?```/g, "")
-          .trim();
+        // Use the shared function to generate tasks
+        const tasks = await generateTasksFromText(fullTranscription);
 
-        console.log("Task generation response:", cleanResponse);
-        tasksData = JSON.parse(cleanResponse);
+        // Send completion with all tasks at once
+        res.write(
+          `data: ${JSON.stringify({
+            phase: "complete",
+            transcription: fullTranscription,
+            tasks: tasks,
+          })}\n\n`
+        );
 
-        if (!tasksData.tasks || !Array.isArray(tasksData.tasks)) {
-          throw new Error("Invalid task structure");
-        }
-      } catch (parseError) {
-        console.error("Failed to parse task response:", parseError);
-        console.error("Raw response:", fullTaskResponse);
+        res.end();
+      } catch (taskError) {
+        console.error("Failed to generate tasks:", taskError);
         res.write(
           `data: ${JSON.stringify({
             phase: "error",
@@ -440,30 +479,6 @@ Extract all tasks and return them in the specified JSON format.`;
         res.end();
         return;
       }
-
-      // Ensure each task has the required fields and add completed property
-      const validatedTasks: Task[] = tasksData.tasks.map((task, index) => {
-        // Always generate a unique UUID to prevent conflicts
-        const uniqueId = uuidv4();
-        return {
-          id: uniqueId,
-          task: task.task || "Untitled task",
-          completed: false,
-        };
-      });
-
-      console.log("Validated tasks:", validatedTasks);
-
-      // Send completion
-      res.write(
-        `data: ${JSON.stringify({
-          phase: "complete",
-          transcription: fullTranscription,
-          tasks: validatedTasks,
-        })}\n\n`
-      );
-
-      res.end();
     } catch (error) {
       console.error("Streaming transcription error:", error);
       res.write(

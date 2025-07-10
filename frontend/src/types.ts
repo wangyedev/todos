@@ -2,6 +2,10 @@ export interface Task {
   id: string;
   task: string;
   completed: boolean;
+  priority?: "low" | "medium" | "high";
+  estimatedDuration?: string;
+  category?: string;
+  notes?: string;
 }
 
 export interface ApiResponse<T> {
