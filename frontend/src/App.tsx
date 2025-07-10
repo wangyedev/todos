@@ -33,16 +33,60 @@ const App: React.FC = () => {
   const handleDeleteTask = useCallback((taskId: string) => {
     setState((prev) => ({
       ...prev,
-      tasks: prev.tasks.filter((task) => task.id !== taskId),
+      tasks: prev.tasks
+        .map((task) => {
+          // If deleting a subtask, remove it from the parent's subtasks array
+          if (task.subtasks) {
+            return {
+              ...task,
+              subtasks: task.subtasks.filter(
+                (subtask) => subtask.id !== taskId
+              ),
+            };
+          }
+          return task;
+        })
+        .filter((task) => task.id !== taskId), // Remove parent tasks
     }));
   }, []);
 
   const handleToggleTask = useCallback((taskId: string) => {
     setState((prev) => ({
       ...prev,
-      tasks: prev.tasks.map((task) =>
-        task.id === taskId ? { ...task, completed: !task.completed } : task
-      ),
+      tasks: prev.tasks.map((task) => {
+        // If toggling a parent task, toggle all its subtasks
+        if (task.id === taskId) {
+          const newCompleted = !task.completed;
+          return {
+            ...task,
+            completed: newCompleted,
+            subtasks: task.subtasks?.map((subtask) => ({
+              ...subtask,
+              completed: newCompleted,
+            })),
+          };
+        }
+
+        // If toggling a subtask, update it within the parent
+        if (task.subtasks) {
+          const updatedSubtasks = task.subtasks.map((subtask) =>
+            subtask.id === taskId
+              ? { ...subtask, completed: !subtask.completed }
+              : subtask
+          );
+
+          // Check if this subtask toggle affects the parent
+          const hasUpdatedSubtask = task.subtasks.some((s) => s.id === taskId);
+          if (hasUpdatedSubtask) {
+            return {
+              ...task,
+              subtasks: updatedSubtasks,
+            };
+          }
+        }
+
+        return task;
+      }),
     }));
   }, []);
 
@@ -56,7 +100,26 @@ const App: React.FC = () => {
   const clearCompletedTasks = useCallback(() => {
     setState((prev) => ({
       ...prev,
-      tasks: prev.tasks.filter((task) => !task.completed),
+      tasks: prev.tasks
+        .map((task) => {
+          // For parent tasks, remove completed subtasks
+          if (task.subtasks) {
+            return {
+              ...task,
+              subtasks: task.subtasks.filter((subtask) => !subtask.completed),
+            };
+          }
+          return task;
+        })
+        .filter((task) => {
+          // Remove parent tasks that are fully completed
+          if (task.subtasks && task.subtasks.length > 0) {
+            // Keep parent if it has remaining subtasks
+            return task.subtasks.some((subtask) => !subtask.completed);
+          }
+          // Remove standalone completed tasks
+          return !task.completed;
+        }),
     }));
   }, []);
 
@@ -79,20 +142,39 @@ const App: React.FC = () => {
     });
   };
 
+  // Calculate task counts for hierarchical structure
+  const getTotalTaskCount = () => {
+    return state.tasks.reduce((total, task) => {
+      return total + 1 + (task.subtasks ? task.subtasks.length : 0);
+    }, 0);
+  };
+
+  const getIncompleteTaskCount = () => {
+    return state.tasks.reduce((total, task) => {
+      const parentIncomplete = task.subtasks
+        ? task.subtasks.some((subtask) => !subtask.completed)
+        : !task.completed;
+      const subtaskIncomplete = task.subtasks
+        ? task.subtasks.filter((subtask) => !subtask.completed).length
+        : 0;
+      return total + (parentIncomplete ? 1 : 0) + subtaskIncomplete;
+    }, 0);
+  };
+
   const sidebarItems = [
     {
       id: "my-day",
       label: "My Day",
       icon: "☀️",
-      count: state.tasks.filter((t) => !t.completed).length,
+      count: getIncompleteTaskCount(),
     },
     { id: "calendar", label: "Calendar", icon: "📅", count: 2 },
-    { id: "all", label: "All", icon: "📋", count: state.tasks.length },
+    { id: "all", label: "All", icon: "📋", count: getTotalTaskCount() },
     {
       id: "tasks",
       label: "Tasks",
       icon: "✅",
-      count: state.tasks.filter((t) => !t.completed).length,
+      count: getIncompleteTaskCount(),
     },
     { id: "notes", label: "Notes", icon: "📝", count: 4 },
   ];

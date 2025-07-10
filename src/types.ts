@@ -6,6 +6,22 @@ export interface Task {
   estimatedDuration?: string;
   category?: string;
   notes?: string;
+  isParent?: boolean;
+  subtasks?: Task[];
+  parentId?: string;
+  order?: number;
+}
+
+export interface TaskGroup {
+  id: string;
+  title: string;
+  description?: string;
+  priority?: "low" | "medium" | "high";
+  estimatedDuration?: string;
+  category?: string;
+  tasks: Task[];
+  completed?: boolean;
+  progress?: number;
 }
 
 export interface GenerateTasksRequest {
@@ -52,5 +68,14 @@ export interface StructuredTaskResponse {
     estimatedDuration?: string;
     category?: string;
     notes?: string;
+    isParent?: boolean;
+    subtasks?: Array<{
+      id: number;
+      task: string;
+      priority?: "low" | "medium" | "high";
+      estimatedDuration?: string;
+      category?: string;
+      notes?: string;
+    }>;
   }>;
 }

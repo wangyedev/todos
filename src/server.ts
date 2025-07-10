@@ -74,103 +74,139 @@ const generateTasksSchema = Joi.object({
 
 // Shared task generation function
 async function generateTasksFromText(inputText: string): Promise<Task[]> {
-  const taskPrompt = `You are an intelligent task management assistant. Your role is to break down user requests into MULTIPLE separate, actionable tasks that can be completed individually.
+  const taskPrompt = `You are an intelligent task management assistant. Your role is to break down user requests into HIERARCHICAL task structures with parent tasks and subtasks.
 
 CRITICAL REQUIREMENTS:
-1. **CREATE MULTIPLE TASKS** - Always break requests into several discrete, actionable items
-2. **KEEP TASKS CONCISE** - Each task should be 1-2 sentences maximum, not paragraphs
-3. **ONE ACTION PER TASK** - Each task should represent a single, specific action
-4. **LOGICAL SEQUENCE** - Order tasks in a logical workflow when possible
+1. **CREATE PARENT TASKS** - Identify 2-4 main categories or phases from the user request
+2. **CREATE SUBTASKS** - Break each parent task into 2-5 specific, actionable subtasks
+3. **LOGICAL HIERARCHY** - Parent tasks represent major phases, subtasks are specific actions
+4. **CLEAR ORGANIZATION** - Structure should be intuitive and easy to follow
 
-TASK BREAKDOWN APPROACH:
-- Identify the main goal from user input
-- Break complex objectives into 3-8 separate preparatory and execution steps
-- Each step should be independently actionable
-- Include both preparation tasks and execution tasks
-- Add follow-up tasks when relevant
+TASK STRUCTURE APPROACH:
+- Identify main phases or categories from user input
+- Create parent tasks that represent these major phases
+- Break each parent task into specific, actionable subtasks
+- Ensure subtasks are concrete and completable
+- Order subtasks logically within each parent
 
-TASK QUALITY STANDARDS:
-- **Concise**: 1-2 sentences maximum per task
+PARENT TASK GUIDELINES:
+- **Descriptive**: Clear phase or category name
+- **Comprehensive**: Covers a logical grouping of related actions
+- **Goal-oriented**: Represents a meaningful milestone
+
+SUBTASK GUIDELINES:
 - **Specific**: Clear action verb and outcome
 - **Actionable**: Can be completed in a single focused session
-- **Independent**: Can be done without completing other tasks simultaneously
+- **Concise**: 1-2 sentences maximum
+- **Independent**: Can be done without other subtasks simultaneously
 
 ENHANCED FIELDS TO PROVIDE:
-- **task**: Brief, specific action (1-2 sentences max)
+- **task**: Brief, specific action or phase name
 - **priority**: "high", "medium", or "low" based on urgency
 - **estimatedDuration**: Realistic time estimate ("15 min", "1 hour", "2 hours")
 - **category**: Logical grouping ("preparation", "execution", "follow-up", "research")
 - **notes**: Brief tip or context (optional, 1 sentence max)
+- **isParent**: true for parent tasks, false or undefined for subtasks
+- **subtasks**: Array of subtask objects (only for parent tasks)
 
-EXAMPLES - GOOD TASK BREAKDOWN:
+EXAMPLES - GOOD HIERARCHICAL TASK BREAKDOWN:
 
-Input: "Buy groceries"
+Input: "Plan a birthday party"
 Output: [
   {
-    "task": "Check pantry and fridge to create shopping list",
+    "task": "Party Planning & Preparation",
     "priority": "high",
-    "estimatedDuration": "10 minutes",
-    "category": "preparation"
+    "estimatedDuration": "2 hours",
+    "category": "preparation",
+    "isParent": true,
+    "subtasks": [
+      {
+        "task": "Choose party date and create guest list",
+        "priority": "high",
+        "estimatedDuration": "30 minutes",
+        "category": "preparation"
+      },
+      {
+        "task": "Select and book venue or prepare home space",
+        "priority": "high",
+        "estimatedDuration": "45 minutes",
+        "category": "preparation"
+      },
+      {
+        "task": "Send invitations to guests",
+        "priority": "medium",
+        "estimatedDuration": "30 minutes",
+        "category": "preparation"
+      },
+      {
+        "task": "Plan party theme and decorations",
+        "priority": "medium",
+        "estimatedDuration": "15 minutes",
+        "category": "preparation"
+      }
+    ]
   },
   {
-    "task": "Research weekly meal plan and add ingredients to list",
-    "priority": "medium", 
-    "estimatedDuration": "15 minutes",
-    "category": "preparation"
-  },
-  {
-    "task": "Go to grocery store and purchase items on list",
+    "task": "Food & Beverage Preparation",
     "priority": "high",
-    "estimatedDuration": "45 minutes", 
-    "category": "execution"
+    "estimatedDuration": "1.5 hours",
+    "category": "execution",
+    "isParent": true,
+    "subtasks": [
+      {
+        "task": "Plan menu and create shopping list",
+        "priority": "high",
+        "estimatedDuration": "20 minutes",
+        "category": "preparation"
+      },
+      {
+        "task": "Shop for food, drinks, and party supplies",
+        "priority": "high",
+        "estimatedDuration": "1 hour",
+        "category": "execution"
+      },
+      {
+        "task": "Prepare food and arrange beverages",
+        "priority": "medium",
+        "estimatedDuration": "45 minutes",
+        "category": "execution"
+      }
+    ]
   },
   {
-    "task": "Organize and store groceries properly",
+    "task": "Party Setup & Execution",
     "priority": "medium",
-    "estimatedDuration": "10 minutes",
-    "category": "execution"
-  }
-]
-
-Input: "Prepare for job interview"
-Output: [
-  {
-    "task": "Research the company background and recent news",
-    "priority": "high",
-    "estimatedDuration": "30 minutes",
-    "category": "preparation"
-  },
-  {
-    "task": "Review job description and match skills to requirements",
-    "priority": "high", 
-    "estimatedDuration": "20 minutes",
-    "category": "preparation"
-  },
-  {
-    "task": "Prepare answers to common interview questions",
-    "priority": "high",
-    "estimatedDuration": "45 minutes",
-    "category": "preparation"
-  },
-  {
-    "task": "Choose and prepare professional outfit",
-    "priority": "medium",
-    "estimatedDuration": "15 minutes",
-    "category": "preparation"
-  },
-  {
-    "task": "Print resume copies and gather required documents",
-    "priority": "medium",
-    "estimatedDuration": "10 minutes",
-    "category": "preparation"
+    "estimatedDuration": "1 hour",
+    "category": "execution",
+    "isParent": true,
+    "subtasks": [
+      {
+        "task": "Set up decorations and party area",
+        "priority": "medium",
+        "estimatedDuration": "30 minutes",
+        "category": "execution"
+      },
+      {
+        "task": "Prepare music playlist and entertainment",
+        "priority": "low",
+        "estimatedDuration": "15 minutes",
+        "category": "execution"
+      },
+      {
+        "task": "Clean up after party",
+        "priority": "low",
+        "estimatedDuration": "30 minutes",
+        "category": "follow-up"
+      }
+    ]
   }
 ]
 
 User input: "${inputText}"
 
-Break down this request into 3-8 separate, concise tasks. Each task should be independently actionable and 1-2 sentences maximum. Focus on creating a logical workflow from preparation to execution to follow-up.
+Break down this request into 2-4 parent tasks, each with 2-5 subtasks. Create a logical hierarchy that makes the overall goal manageable and organized.
 
-Return JSON with "tasks" array containing separate task objects with the specified fields.`;
+Return JSON with "tasks" array containing parent task objects with nested subtasks.`;
 
   // Generate response using Gemini API
   const result = await genAI.models.generateContent({
@@ -192,8 +228,27 @@ Return JSON with "tasks" array containing separate task objects with the specifi
                 estimatedDuration: { type: "string" },
                 category: { type: "string" },
                 notes: { type: "string" },
+                isParent: { type: "boolean" },
+                subtasks: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      id: { type: "number" },
+                      task: { type: "string" },
+                      priority: {
+                        type: "string",
+                        enum: ["low", "medium", "high"],
+                      },
+                      estimatedDuration: { type: "string" },
+                      category: { type: "string" },
+                      notes: { type: "string" },
+                    },
+                    required: ["task"],
+                  },
+                },
               },
-              required: ["id", "task"],
+              required: ["task"],
             },
           },
         },
@@ -214,22 +269,48 @@ Return JSON with "tasks" array containing separate task objects with the specifi
     throw new Error("Invalid task structure");
   }
 
-  // Validate and format tasks
-  const validatedTasks: Task[] = parsedResponse.tasks.map((task) => {
-    const validatedTask: Task = {
+  // Validate and format tasks with hierarchical structure
+  const validatedTasks: Task[] = [];
+
+  parsedResponse.tasks.forEach((task, index) => {
+    const parentTask: Task = {
       id: uuidv4(),
       task: task.task || "Untitled task",
       completed: false,
       priority: task.priority || "medium",
+      isParent: task.isParent || false,
+      order: index,
     };
 
     // Add optional fields only if they exist
     if (task.estimatedDuration)
-      validatedTask.estimatedDuration = task.estimatedDuration;
-    if (task.category) validatedTask.category = task.category;
-    if (task.notes) validatedTask.notes = task.notes;
+      parentTask.estimatedDuration = task.estimatedDuration;
+    if (task.category) parentTask.category = task.category;
+    if (task.notes) parentTask.notes = task.notes;
 
-    return validatedTask;
+    // Handle subtasks if this is a parent task
+    if (task.subtasks && Array.isArray(task.subtasks)) {
+      parentTask.subtasks = task.subtasks.map((subtask, subtaskIndex) => {
+        const validatedSubtask: Task = {
+          id: uuidv4(),
+          task: subtask.task || "Untitled subtask",
+          completed: false,
+          priority: subtask.priority || "medium",
+          parentId: parentTask.id,
+          order: subtaskIndex,
+        };
+
+        // Add optional fields only if they exist
+        if (subtask.estimatedDuration)
+          validatedSubtask.estimatedDuration = subtask.estimatedDuration;
+        if (subtask.category) validatedSubtask.category = subtask.category;
+        if (subtask.notes) validatedSubtask.notes = subtask.notes;
+
+        return validatedSubtask;
+      });
+    }
+
+    validatedTasks.push(parentTask);
   });
 
   console.log("Validated tasks:", validatedTasks);
