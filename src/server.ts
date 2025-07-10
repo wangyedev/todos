@@ -77,28 +77,30 @@ async function generateTasksFromText(inputText: string): Promise<Task[]> {
   const taskPrompt = `You are an intelligent task management assistant. Your role is to break down user requests into HIERARCHICAL task structures with parent tasks and subtasks.
 
 CRITICAL REQUIREMENTS:
-1. **CREATE PARENT TASKS** - Identify 2-4 main categories or phases from the user request
-2. **CREATE SUBTASKS** - Break each parent task into 2-5 specific, actionable subtasks
-3. **LOGICAL HIERARCHY** - Parent tasks represent major phases, subtasks are specific actions
-4. **CLEAR ORGANIZATION** - Structure should be intuitive and easy to follow
+1. **CREATE ONE TASK GROUP** - Most requests should result in ONE parent task with multiple subtasks
+2. **FOCUSED SUBTASKS** - Break the main goal into 3-5 essential, actionable subtasks (only use more if truly necessary)
+3. **LOGICAL SEQUENCE** - Subtasks should follow a logical workflow from start to finish
+4. **SINGLE FOCUS** - Only create multiple parent tasks if the request contains genuinely distinct, unrelated goals
 
 TASK STRUCTURE APPROACH:
-- Identify main phases or categories from user input
-- Create parent tasks that represent these major phases
-- Break each parent task into specific, actionable subtasks
-- Ensure subtasks are concrete and completable
-- Order subtasks logically within each parent
+- Identify the main goal from user input
+- Create ONE parent task that represents the overall objective
+- Break that goal into 3-5 ESSENTIAL subtasks (combine related steps to avoid over-granularity)
+- Order subtasks chronologically (preparation → execution → follow-up)
+- Only create multiple parent tasks if the request contains completely separate objectives
 
 PARENT TASK GUIDELINES:
-- **Descriptive**: Clear phase or category name
-- **Comprehensive**: Covers a logical grouping of related actions
-- **Goal-oriented**: Represents a meaningful milestone
+- **Descriptive**: Clear representation of the main goal
+- **Comprehensive**: Encompasses the entire objective
+- **Goal-oriented**: Represents the complete desired outcome
 
 SUBTASK GUIDELINES:
-- **Specific**: Clear action verb and outcome
+- **Essential Only**: Focus on the most important steps, combine minor actions
+- **Substantial**: Each subtask should represent meaningful progress toward the goal
 - **Actionable**: Can be completed in a single focused session
 - **Concise**: 1-2 sentences maximum
-- **Independent**: Can be done without other subtasks simultaneously
+- **Sequential**: Follows logical order from preparation to completion
+- **Avoid Over-Granularity**: Don't break down every tiny step - group related actions together
 
 ENHANCED FIELDS TO PROVIDE:
 - **task**: Brief, specific action or phase name
@@ -112,128 +114,113 @@ ENHANCED FIELDS TO PROVIDE:
 - **startDate**: ISO date string for when task should be started (optional, YYYY-MM-DD format)
 
 DATE ASSIGNMENT RULES:
-- Parent tasks should have realistic due dates based on the overall timeline
-- Subtasks should have due dates that allow completion before parent due date
-- Consider dependencies between tasks when assigning dates
-- Use current date as baseline: ${new Date().toISOString().split("T")[0]}
-- Spread tasks over reasonable timeframes (don't bunch everything on same day)
-- Earlier preparation tasks should have earlier due dates
-- Execution tasks should follow preparation tasks chronologically
+- Parent task due date should be when the overall goal is complete
+- Subtasks should have staggered due dates leading up to parent completion
+- Start with current date as baseline: ${new Date().toISOString().split("T")[0]}
+- Spread subtasks over reasonable timeframes (preparation → execution → follow-up)
+- Earlier preparation subtasks get earlier due dates
+- Execution subtasks should follow preparation chronologically
+- Allow realistic time between dependent subtasks
 
 EXAMPLES - GOOD HIERARCHICAL TASK BREAKDOWN:
 
 Input: "Plan a birthday party"
 Output: [
   {
-    "task": "Party Planning & Preparation",
+    "task": "Plan Birthday Party",
     "priority": "high",
-    "estimatedDuration": "2 hours",
-    "category": "preparation",
+    "estimatedDuration": "3 hours",
+    "category": "project",
     "isParent": true,
-    "dueDate": "2024-12-15",
-    "startDate": "2024-12-10",
+    "dueDate": "2024-12-21",
+    "startDate": "2024-12-15",
     "subtasks": [
       {
-        "task": "Choose party date and create guest list",
+        "task": "Plan party details and send invitations",
         "priority": "high",
-        "estimatedDuration": "30 minutes",
-        "category": "preparation",
-        "dueDate": "2024-12-10",
-        "startDate": "2024-12-10"
-      },
-      {
-        "task": "Select and book venue or prepare home space",
-        "priority": "high",
-        "estimatedDuration": "45 minutes",
-        "category": "preparation",
-        "dueDate": "2024-12-11",
-        "startDate": "2024-12-11"
-      },
-      {
-        "task": "Send invitations to guests",
-        "priority": "medium",
-        "estimatedDuration": "30 minutes",
-        "category": "preparation",
-        "dueDate": "2024-12-12",
-        "startDate": "2024-12-12"
-      },
-      {
-        "task": "Plan party theme and decorations",
-        "priority": "medium",
-        "estimatedDuration": "15 minutes",
-        "category": "preparation",
-        "dueDate": "2024-12-13",
-        "startDate": "2024-12-13"
-      }
-    ]
-  },
-  {
-    "task": "Food & Beverage Preparation",
-    "priority": "high",
-    "estimatedDuration": "1.5 hours",
-    "category": "execution",
-    "isParent": true,
-    "dueDate": "2024-12-20",
-    "startDate": "2024-12-16",
-    "subtasks": [
-      {
-        "task": "Plan menu and create shopping list",
-        "priority": "high",
-        "estimatedDuration": "20 minutes",
+        "estimatedDuration": "1 hour",
         "category": "preparation",
         "dueDate": "2024-12-16",
-        "startDate": "2024-12-16"
+        "startDate": "2024-12-15",
+        "notes": "Choose date, create guest list, select venue/location, and send invitations"
       },
       {
         "task": "Shop for food, drinks, and party supplies",
         "priority": "high",
+        "estimatedDuration": "1.5 hours",
+        "category": "execution",
+        "dueDate": "2024-12-20",
+        "startDate": "2024-12-19",
+        "notes": "Buy decorations, food, beverages, and any needed party supplies"
+      },
+      {
+        "task": "Prepare party space and food",
+        "priority": "medium",
         "estimatedDuration": "1 hour",
         "category": "execution",
-        "dueDate": "2024-12-19",
-        "startDate": "2024-12-19"
-      },
-      {
-        "task": "Prepare food and arrange beverages",
-        "priority": "medium",
-        "estimatedDuration": "45 minutes",
-        "category": "execution",
-        "dueDate": "2024-12-20",
-        "startDate": "2024-12-20"
-      }
-    ]
-  },
-  {
-    "task": "Party Setup & Execution",
-    "priority": "medium",
-    "estimatedDuration": "1 hour",
-    "category": "execution",
-    "isParent": true,
-    "dueDate": "2024-12-21",
-    "startDate": "2024-12-21",
-    "subtasks": [
-      {
-        "task": "Set up decorations and party area",
-        "priority": "medium",
-        "estimatedDuration": "30 minutes",
-        "category": "execution",
         "dueDate": "2024-12-21",
-        "startDate": "2024-12-21"
+        "startDate": "2024-12-21",
+        "notes": "Set up decorations, arrange food and drinks, prepare music/entertainment"
       },
       {
-        "task": "Prepare music playlist and entertainment",
-        "priority": "low",
-        "estimatedDuration": "15 minutes",
-        "category": "execution",
-        "dueDate": "2024-12-20",
-        "startDate": "2024-12-20"
-      },
-      {
-        "task": "Clean up after party",
-        "priority": "low",
+        "task": "Host party and clean up",
+        "priority": "medium",
         "estimatedDuration": "30 minutes",
         "category": "follow-up",
         "dueDate": "2024-12-21",
-        "startDate": "2024-12-21"
+        "startDate": "2024-12-21",
+        "notes": "Enjoy the party and clean up afterwards"
+      }
+    ]
+  }
+]
+
+Input: "Do laundry"
+Output: [
+  {
+    "task": "Do Laundry",
+    "priority": "medium",
+    "estimatedDuration": "2 hours",
+    "category": "household",
+    "isParent": true,
+    "dueDate": "2024-12-08",
+    "startDate": "2024-12-08",
+    "subtasks": [
+      {
+        "task": "Gather and sort laundry",
+        "priority": "medium",
+        "estimatedDuration": "15 minutes",
+        "category": "preparation",
+        "dueDate": "2024-12-08",
+        "startDate": "2024-12-08",
+        "notes": "Collect dirty clothes and sort by color and fabric type"
+      },
+      {
+        "task": "Wash clothes",
+        "priority": "high",
+        "estimatedDuration": "5 minutes",
+        "category": "execution",
+        "dueDate": "2024-12-08",
+        "startDate": "2024-12-08",
+        "notes": "Load washing machine, add detergent, and start cycle"
+      },
+      {
+        "task": "Dry clothes",
+        "priority": "high",
+        "estimatedDuration": "10 minutes",
+        "category": "execution",
+        "dueDate": "2024-12-08",
+        "startDate": "2024-12-08",
+        "notes": "Transfer to dryer or hang to air dry"
+      },
+      {
+        "task": "Fold and put away clean clothes",
+        "priority": "medium",
+        "estimatedDuration": "20 minutes",
+        "category": "follow-up",
+        "dueDate": "2024-12-08",
+        "startDate": "2024-12-08",
+        "notes": "Fold, iron if needed, and store in appropriate locations"
       }
     ]
   }
@@ -241,7 +228,20 @@ Output: [
 
 User input: "${inputText}"
 
-Break down this request into 2-4 parent tasks, each with 2-5 subtasks. Create a logical hierarchy that makes the overall goal manageable and organized.
+IMPORTANT: Create ONE parent task with 3-5 ESSENTIAL subtasks unless the request contains multiple completely unrelated goals.
+
+Examples of SINGLE task group requests:
+- "Plan a birthday party" → ONE parent task with 4 focused subtasks
+- "Prepare for job interview" → ONE parent task with 3-4 subtasks
+- "Organize office space" → ONE parent task with 4-5 subtasks
+- "Do laundry" → ONE parent task with 4 subtasks
+- "Learn to cook pasta" → ONE parent task with 3-4 subtasks
+
+Examples of MULTIPLE task group requests (rare):
+- "Plan a birthday party and learn Spanish" → TWO separate parent tasks
+- "Organize office and plan vacation and study for exam" → THREE separate parent tasks
+
+SUBTASK LIMIT: Keep subtasks to 3-5 per parent task. Combine related actions instead of creating many small steps.
 
 Return JSON with "tasks" array containing parent task objects with nested subtasks.`;
 
