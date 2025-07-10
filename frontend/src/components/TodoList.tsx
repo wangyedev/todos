@@ -21,8 +21,7 @@ const TodoList: React.FC<TodoListProps> = ({
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string>("");
-  const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
-  const [editingNotes, setEditingNotes] = useState<string>("");
+  const [starredTasks, setStarredTasks] = useState<Set<string>>(new Set());
   const [textRefinementTooltip, setTextRefinementTooltip] = useState<{
     isVisible: boolean;
     taskId: string;
@@ -32,16 +31,6 @@ const TodoList: React.FC<TodoListProps> = ({
     taskId: "",
     text: "",
   });
-  const [notesRefinementTooltip, setNotesRefinementTooltip] = useState<{
-    isVisible: boolean;
-    taskId: string;
-    notes: string;
-  }>({
-    isVisible: false,
-    taskId: "",
-    notes: "",
-  });
-  const taskTextRef = useRef<HTMLDivElement>(null);
 
   const toggleExpanded = (taskId: string) => {
     setExpandedTasks((prev) => {
@@ -55,11 +44,15 @@ const TodoList: React.FC<TodoListProps> = ({
     });
   };
 
-  const handleTextClick = (task: Task) => {
-    setTextRefinementTooltip({
-      isVisible: true,
-      taskId: task.id,
-      text: task.task,
+  const toggleStarred = (taskId: string) => {
+    setStarredTasks((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(taskId)) {
+        newSet.delete(taskId);
+      } else {
+        newSet.add(taskId);
+      }
+      return newSet;
     });
   };
 
@@ -97,99 +90,10 @@ const TodoList: React.FC<TodoListProps> = ({
     setEditingText("");
   };
 
-  const handleNotesClick = (task: Task) => {
-    setNotesRefinementTooltip({
-      isVisible: true,
-      taskId: task.id,
-      notes: task.notes || "",
-    });
-  };
-
-  const handleNotesDoubleClick = (task: Task) => {
-    setEditingNotesId(task.id);
-    setEditingNotes(task.notes || "");
-  };
-
-  const handleEditingNotesChange = (
-    e: React.ChangeEvent<HTMLTextAreaElement>
-  ) => {
-    setEditingNotes(e.target.value);
-  };
-
-  const handleEditingNotesKeyPress = (
-    e: React.KeyboardEvent<HTMLTextAreaElement>
-  ) => {
-    if (e.key === "Enter" && e.ctrlKey) {
-      handleSaveNotesEdit();
-    } else if (e.key === "Escape") {
-      handleCancelNotesEdit();
-    }
-  };
-
-  const handleSaveNotesEdit = async () => {
-    if (editingNotesId) {
-      try {
-        await onUpdateTaskNotes(editingNotesId, editingNotes.trim());
-        setEditingNotesId(null);
-        setEditingNotes("");
-      } catch (error) {
-        console.error("Failed to update task notes:", error);
-      }
-    }
-  };
-
-  const handleCancelNotesEdit = () => {
-    setEditingNotesId(null);
-    setEditingNotes("");
-  };
-
-  const handleRefinedTextSelect = (refinedText: string) => {
-    if (textRefinementTooltip.taskId) {
-      onUpdateTaskText(textRefinementTooltip.taskId, refinedText);
-    }
-  };
-
-  const handleRefinedNotesSelect = (refinedNotes: string) => {
-    if (notesRefinementTooltip.taskId) {
-      onUpdateTaskNotes(notesRefinementTooltip.taskId, refinedNotes);
-    }
-  };
-
   const closeTextRefinementTooltip = () => {
     setTextRefinementTooltip((prev) => ({ ...prev, isVisible: false }));
   };
 
-  const closeNotesRefinementTooltip = () => {
-    setNotesRefinementTooltip((prev) => ({ ...prev, isVisible: false }));
-  };
-
-  const getPriorityColor = (priority?: string) => {
-    switch (priority) {
-      case "high":
-        return "bg-red-500 bg-opacity-20 text-red-300 border-red-500 border-opacity-30";
-      case "medium":
-        return "bg-yellow-500 bg-opacity-20 text-yellow-300 border-yellow-500 border-opacity-30";
-      case "low":
-        return "bg-green-500 bg-opacity-20 text-green-300 border-green-500 border-opacity-30";
-      default:
-        return "bg-gray-500 bg-opacity-20 text-gray-300 border-gray-500 border-opacity-30";
-    }
-  };
-
-  const getPriorityIcon = (priority?: string) => {
-    switch (priority) {
-      case "high":
-        return "🔴";
-      case "medium":
-        return "🟡";
-      case "low":
-        return "🟢";
-      default:
-        return "⚪";
-    }
-  };
-
-  // Calculate progress for parent tasks
   const getParentProgress = (task: Task) => {
     if (!task.subtasks || task.subtasks.length === 0) return 0;
     const completedSubtasks = task.subtasks.filter(
@@ -198,10 +102,50 @@ const TodoList: React.FC<TodoListProps> = ({
     return Math.round((completedSubtasks / task.subtasks.length) * 100);
   };
 
-  // Check if parent task should be considered completed
   const isParentCompleted = (task: Task) => {
-    if (!task.subtasks || task.subtasks.length === 0) return task.completed;
-    return task.subtasks.every((subtask) => subtask.completed);
+    return (
+      task.completed ||
+      (task.subtasks && task.subtasks.every((st) => st.completed))
+    );
+  };
+
+  const getStatusBadge = (task: Task) => {
+    const today = new Date().toISOString().split("T")[0];
+
+    if (task.dueDate) {
+      if (task.dueDate < today && !isParentCompleted(task)) {
+        return {
+          text: "Yesterday",
+          color: "text-red-400",
+          bg: "bg-red-900 bg-opacity-30",
+        };
+      } else if (task.dueDate === today) {
+        return {
+          text: "Today",
+          color: "text-blue-400",
+          bg: "bg-blue-900 bg-opacity-30",
+        };
+      }
+    }
+
+    if (task.priority) {
+      const priority = task.priority.toLowerCase();
+      if (priority === "high") {
+        return {
+          text: "High",
+          color: "text-red-400",
+          bg: "bg-red-900 bg-opacity-30",
+        };
+      } else if (priority === "medium") {
+        return {
+          text: "Medium",
+          color: "text-yellow-400",
+          bg: "bg-yellow-900 bg-opacity-30",
+        };
+      }
+    }
+
+    return null;
   };
 
   const TaskItem = ({
@@ -212,299 +156,207 @@ const TodoList: React.FC<TodoListProps> = ({
     isSubtask?: boolean;
   }) => {
     const isExpanded = expandedTasks.has(task.id);
-    const parentProgress = isSubtask ? 0 : getParentProgress(task);
-    const isCompleted = isSubtask ? task.completed : isParentCompleted(task);
-    const taskIsOverdue = isOverdue(task);
-    const taskIsDueToday = isDueToday(task);
+    const hasSubtasks = task.subtasks && task.subtasks.length > 0;
+    const progress = getParentProgress(task);
+    const isCompleted = isParentCompleted(task);
+    const isStarred = starredTasks.has(task.id);
+    const statusBadge = getStatusBadge(task);
 
     return (
-      <div className={`${isSubtask ? "ml-8" : ""}`}>
-        <div
-          className={`task-item group ${isCompleted ? "completed" : ""} ${
-            taskIsOverdue
-              ? "border-red-500 border-opacity-50"
-              : taskIsDueToday
-              ? "border-orange-500 border-opacity-50"
-              : ""
-          }`}
-        >
-          <div className="flex items-start gap-4">
-            <div className="flex items-center gap-2">
-              {/* Overdue indicator */}
-              {taskIsOverdue && !isCompleted && (
-                <span className="text-red-400 text-xs">🚨</span>
-              )}
-              {/* Due today indicator */}
-              {taskIsDueToday && !isCompleted && !taskIsOverdue && (
-                <span className="text-orange-400 text-xs">⚠️</span>
-              )}
-
-              {/* Parent task expand/collapse button */}
-              {!isSubtask && task.subtasks && task.subtasks.length > 0 && (
-                <button
-                  onClick={() => toggleExpanded(task.id)}
-                  className="text-gray-400 hover:text-white transition-colors p-1"
-                >
-                  {isExpanded ? "▼" : "▶"}
-                </button>
-              )}
-
-              {/* Task checkbox */}
-              <button
-                type="button"
-                onClick={() => onToggleTask(task.id)}
-                className={`task-checkbox ${isCompleted ? "completed" : ""}`}
-                aria-label={
-                  isCompleted ? "Mark as incomplete" : "Mark as complete"
-                }
+      <div
+        className={`task-item ${isCompleted ? "completed" : ""} ${
+          isSubtask ? "ml-6 border-l-2 border-gray-600 pl-4" : ""
+        }`}
+      >
+        <div className="flex items-start space-x-3">
+          {/* Checkbox */}
+          <button
+            onClick={() => onToggleTask(task.id)}
+            className={`task-checkbox mt-1 ${isCompleted ? "completed" : ""}`}
+          >
+            {isCompleted && (
+              <svg
+                className="w-3 h-3 text-white"
+                fill="currentColor"
+                viewBox="0 0 20 20"
               >
-                {isCompleted && <span className="text-white text-xs">✓</span>}
-              </button>
-            </div>
+                <path
+                  fillRule="evenodd"
+                  d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            )}
+          </button>
 
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    {/* Task text - editable */}
-                    {editingTaskId === task.id ? (
-                      <div className="flex-1 flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={editingText}
-                          onChange={handleEditingTextChange}
-                          onKeyDown={handleEditingKeyPress}
-                          onBlur={handleSaveEdit}
-                          className="flex-1 bg-gray-800 text-white px-2 py-1 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
-                          autoFocus
-                        />
+          {/* Main content */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between">
+              <div className="flex-1 min-w-0">
+                {editingTaskId === task.id ? (
+                  <input
+                    type="text"
+                    value={editingText}
+                    onChange={handleEditingTextChange}
+                    onKeyDown={handleEditingKeyPress}
+                    onBlur={handleSaveEdit}
+                    className="input-field w-full"
+                    autoFocus
+                  />
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      {hasSubtasks && !isSubtask && (
                         <button
-                          onClick={handleSaveEdit}
-                          className="text-green-400 hover:text-green-300 p-1"
-                          title="Save"
+                          onClick={() => toggleExpanded(task.id)}
+                          className="text-gray-500 hover:text-white transition-colors"
                         >
-                          ✓
+                          <svg
+                            className={`w-4 h-4 transition-transform ${
+                              isExpanded ? "rotate-90" : ""
+                            }`}
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
                         </button>
-                        <button
-                          onClick={handleCancelEdit}
-                          className="text-red-400 hover:text-red-300 p-1"
-                          title="Cancel"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex-1 flex items-center gap-2">
-                        <p
-                          ref={taskTextRef}
-                          className={`text-base leading-6 font-medium cursor-pointer hover:bg-gray-700 hover:bg-opacity-30 px-2 py-1 rounded transition-colors ${
-                            isCompleted
-                              ? "line-through text-gray-500"
-                              : isSubtask
-                              ? "text-gray-200"
-                              : "text-white"
-                          }`}
-                          onClick={() => handleTextDoubleClick(task)}
-                          title="Click to edit text"
-                        >
-                          {task.task}
-                        </p>
+                      )}
 
-                        {/* Edit button */}
-                        <button
-                          onClick={() => handleTextDoubleClick(task)}
-                          className="text-gray-500 hover:text-blue-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Edit task text"
-                        >
-                          ✏️
-                        </button>
+                      <h3
+                        className={`font-medium text-white cursor-pointer ${
+                          isCompleted ? "line-through opacity-60" : ""
+                        }`}
+                        onDoubleClick={() => handleTextDoubleClick(task)}
+                      >
+                        {task.task}
+                      </h3>
+                    </div>
 
-                        {/* AI Editor button */}
-                        <button
-                          onClick={() => handleTextClick(task)}
-                          className="text-gray-500 hover:text-purple-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="AI Editor - Refine task text"
+                    {/* Status and metadata */}
+                    <div className="flex items-center space-x-2 text-xs">
+                      {statusBadge && (
+                        <span
+                          className={`px-2 py-1 rounded ${statusBadge.bg} ${statusBadge.color}`}
                         >
-                          🤖
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Parent task indicator */}
-                    {!isSubtask &&
-                      task.subtasks &&
-                      task.subtasks.length > 0 && (
-                        <span className="text-xs bg-blue-500 bg-opacity-20 text-blue-300 px-2 py-1 rounded-full">
-                          {task.subtasks.length} tasks
+                          {statusBadge.text}
                         </span>
                       )}
-                  </div>
 
-                  {/* Progress bar for parent tasks */}
-                  {!isSubtask && task.subtasks && task.subtasks.length > 0 && (
-                    <div className="mb-2">
-                      <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
-                        <span>Progress: {parentProgress}%</span>
-                      </div>
-                      <div className="w-full bg-gray-700 rounded-full h-2">
-                        <div
-                          className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${parentProgress}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
+                      {task.dueDate && (
+                        <span className="text-gray-400">
+                          📅 {new Date(task.dueDate).toLocaleDateString()}
+                        </span>
+                      )}
 
-                  {/* Task metadata */}
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {task.priority && (
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border ${getPriorityColor(
-                          task.priority
-                        )}`}
-                      >
-                        {getPriorityIcon(task.priority)}
-                        {task.priority}
-                      </span>
-                    )}
-
-                    {task.estimatedDuration && (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-500 bg-opacity-20 text-blue-300 border border-blue-500 border-opacity-30">
-                        ⏱️ {task.estimatedDuration}
-                      </span>
-                    )}
-
-                    {task.dueDate && (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-orange-500 bg-opacity-20 text-orange-300 border border-orange-500 border-opacity-30">
-                        📅 Due: {new Date(task.dueDate).toLocaleDateString()}
-                      </span>
-                    )}
-
-                    {task.startDate && (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-500 bg-opacity-20 text-green-300 border border-green-500 border-opacity-30">
-                        🚀 Start:{" "}
-                        {new Date(task.startDate).toLocaleDateString()}
-                      </span>
-                    )}
-
-                    {task.category && (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-purple-500 bg-opacity-20 text-purple-300 border border-purple-500 border-opacity-30">
-                        📂 {task.category}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Task notes */}
-                  {(task.notes || editingNotesId === task.id) && (
-                    <div className="mt-2">
-                      {editingNotesId === task.id ? (
-                        <div className="flex flex-col gap-2">
-                          <textarea
-                            value={editingNotes}
-                            onChange={handleEditingNotesChange}
-                            onKeyDown={handleEditingNotesKeyPress}
-                            onBlur={handleSaveNotesEdit}
-                            className="text-sm bg-gray-800 text-white px-3 py-2 rounded border border-gray-600 focus:border-blue-500 focus:outline-none resize-none"
-                            rows={3}
-                            placeholder="Add notes..."
-                            autoFocus
-                          />
-                          <div className="flex gap-2">
-                            <button
-                              onClick={handleSaveNotesEdit}
-                              className="text-green-400 hover:text-green-300 text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
-                              title="Save (Ctrl+Enter)"
-                            >
-                              ✓ Save
-                            </button>
-                            <button
-                              onClick={handleCancelNotesEdit}
-                              className="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600"
-                              title="Cancel (Esc)"
-                            >
-                              ✕ Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="group">
-                          <div
-                            className="text-sm text-gray-400 bg-gray-800 bg-opacity-50 p-3 rounded border-l-4 border-gray-600 cursor-pointer hover:bg-gray-700 hover:bg-opacity-30 transition-colors"
-                            onClick={() => handleNotesDoubleClick(task)}
-                            title="Click to edit notes"
-                          >
-                            💡 {task.notes}
-                          </div>
-                          <div className="flex gap-2 mt-1">
-                            <button
-                              onClick={() => handleNotesDoubleClick(task)}
-                              className="text-gray-500 hover:text-blue-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                              title="Edit notes"
-                            >
-                              ✏️ Edit notes
-                            </button>
-
-                            {/* AI Editor button for notes */}
-                            <button
-                              onClick={() => handleNotesClick(task)}
-                              className="text-gray-500 hover:text-purple-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                              title="AI Editor - Refine notes"
-                            >
-                              🤖 AI Editor
-                            </button>
-                          </div>
-                        </div>
+                      {hasSubtasks && (
+                        <span className="text-gray-400">
+                          📋{" "}
+                          {task.subtasks!.filter((st) => st.completed).length}/
+                          {task.subtasks!.length}
+                        </span>
                       )}
                     </div>
-                  )}
 
-                  {/* Add notes button when no notes exist */}
-                  {!task.notes && editingNotesId !== task.id && (
-                    <button
-                      onClick={() => handleNotesDoubleClick(task)}
-                      className="mt-2 text-xs text-gray-500 hover:text-blue-400 transition-colors"
-                      title="Add notes"
-                    >
-                      💡 Add notes
-                    </button>
-                  )}
-                </div>
+                    {/* Progress bar for tasks with subtasks */}
+                    {hasSubtasks && progress > 0 && (
+                      <div className="progress-bar">
+                        <div
+                          className="progress-fill"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                    )}
 
-                <div className="flex items-center gap-2">
-                  {!isSubtask && (
-                    <button
-                      type="button"
-                      className="text-gray-500 hover:text-white p-1 hover:bg-gray-700 hover:bg-opacity-50 rounded transition-colors duration-200"
-                      aria-label="Star task"
-                    >
-                      ⭐
-                    </button>
-                  )}
+                    {/* Task notes preview */}
+                    {task.notes && (
+                      <div className="text-xs text-gray-400 bg-gray-800 px-2 py-1 rounded">
+                        💡 {task.notes.substring(0, 100)}
+                        {task.notes.length > 100 ? "..." : ""}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                {!isSubtask && (
                   <button
-                    type="button"
-                    onClick={() => onDeleteTask(task.id)}
-                    className="text-gray-500 hover:text-red-400 p-1 hover:bg-gray-700 hover:bg-opacity-50 rounded transition-colors duration-200"
-                    aria-label="Delete task"
+                    onClick={() => toggleStarred(task.id)}
+                    className={`p-1 rounded hover:bg-gray-700 transition-colors ${
+                      isStarred
+                        ? "text-yellow-400"
+                        : "text-gray-500 hover:text-yellow-400"
+                    }`}
                   >
-                    🗑️
+                    <svg
+                      className="w-4 h-4"
+                      fill={isStarred ? "currentColor" : "none"}
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+                      />
+                    </svg>
                   </button>
-                </div>
+                )}
+
+                <button
+                  onClick={() => onDeleteTask(task.id)}
+                  className="p-1 rounded text-gray-500 hover:text-red-400 hover:bg-gray-700 transition-colors"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
+                  </svg>
+                </button>
+
+                <button className="p-1 rounded text-gray-500 hover:text-gray-300 hover:bg-gray-700 transition-colors">
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+                    />
+                  </svg>
+                </button>
               </div>
             </div>
           </div>
         </div>
 
         {/* Subtasks */}
-        {!isSubtask &&
-          task.subtasks &&
-          task.subtasks.length > 0 &&
-          isExpanded && (
-            <div className="mt-2 space-y-2">
-              {task.subtasks.map((subtask) => (
-                <TaskItem key={subtask.id} task={subtask} isSubtask={true} />
-              ))}
-            </div>
-          )}
+        {!isSubtask && hasSubtasks && isExpanded && (
+          <div className="mt-3 space-y-2">
+            {task.subtasks!.map((subtask) => (
+              <TaskItem key={subtask.id} task={subtask} isSubtask={true} />
+            ))}
+          </div>
+        )}
       </div>
     );
   };
@@ -532,27 +384,54 @@ const TodoList: React.FC<TodoListProps> = ({
   const TaskSection = ({
     title,
     tasks,
-    color = "text-gray-400",
+    icon,
+    isCollapsible = false,
   }: {
     title: string;
     tasks: Task[];
-    color?: string;
+    icon?: string;
+    isCollapsible?: boolean;
   }) => {
+    const [isCollapsed, setIsCollapsed] = useState(false);
+
     if (tasks.length === 0) return null;
 
     return (
-      <div className="mb-8">
-        <div className={`section-header ${color}`}>
-          <span>{title}</span>
-          <span className="text-xs bg-gray-600 bg-opacity-50 px-2 py-1 rounded-full">
-            {tasks.length}
-          </span>
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <button
+            onClick={() => isCollapsible && setIsCollapsed(!isCollapsed)}
+            className="flex items-center space-x-2 text-gray-300 hover:text-white transition-colors"
+          >
+            <span className="text-lg font-semibold">{title}</span>
+            {icon && <span className="text-sm">{icon}</span>}
+            {isCollapsible && (
+              <svg
+                className={`w-4 h-4 transition-transform ${
+                  isCollapsed ? "" : "rotate-90"
+                }`}
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            )}
+          </button>
         </div>
-        <div className="space-y-3">
-          {tasks.map((task) => (
-            <TaskItem key={task.id} task={task} />
-          ))}
-        </div>
+
+        {!isCollapsed && (
+          <div className="space-y-2">
+            {tasks.map((task) => (
+              <div key={task.id} className="group">
+                <TaskItem task={task} />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   };
@@ -566,7 +445,7 @@ const TodoList: React.FC<TodoListProps> = ({
             No tasks yet
           </h3>
           <p className="text-gray-500 text-sm">
-            Add your first task by typing or recording a voice command above.
+            Add your first task using the AI task generator above.
           </p>
         </div>
       </div>
@@ -575,16 +454,18 @@ const TodoList: React.FC<TodoListProps> = ({
 
   return (
     <div className="space-y-6">
-      <TaskSection title="Overdue" tasks={overdueTasks} color="text-red-400" />
+      <TaskSection title="Overdue" tasks={overdueTasks} icon="🔴" />
       <TaskSection
         title="Today"
         tasks={todayTasks.filter((t) => !isParentCompleted(t))}
+        icon="☀️"
       />
       {completedTasks.length > 0 && (
         <TaskSection
           title="Completed"
           tasks={completedTasks}
-          color="text-green-400"
+          icon="✅"
+          isCollapsible={true}
         />
       )}
 
@@ -593,15 +474,11 @@ const TodoList: React.FC<TodoListProps> = ({
         text={textRefinementTooltip.text}
         isVisible={textRefinementTooltip.isVisible}
         onClose={closeTextRefinementTooltip}
-        onRefinedTextSelect={handleRefinedTextSelect}
-      />
-
-      {/* Notes Refinement Tooltip */}
-      <NotesRefinementTooltip
-        notes={notesRefinementTooltip.notes}
-        isVisible={notesRefinementTooltip.isVisible}
-        onClose={closeNotesRefinementTooltip}
-        onRefinedNotesSelect={handleRefinedNotesSelect}
+        onRefinedTextSelect={(refinedText) => {
+          if (textRefinementTooltip.taskId) {
+            onUpdateTaskText(textRefinementTooltip.taskId, refinedText);
+          }
+        }}
       />
     </div>
   );

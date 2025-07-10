@@ -18,6 +18,9 @@ const MainApp: React.FC = () => {
     isAuthenticated: false,
   });
 
+  const [activeView, setActiveView] = useState<string>("my-day");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   const [confirmModal, setConfirmModal] = useState<{
     isVisible: boolean;
     title: string;
@@ -241,10 +244,9 @@ const MainApp: React.FC = () => {
   const getCurrentDate = () => {
     const now = new Date();
     return now.toLocaleDateString("en-US", {
-      weekday: "long",
-      year: "numeric",
+      weekday: "short",
+      day: "2-digit",
       month: "long",
-      day: "numeric",
     });
   };
 
@@ -256,50 +258,250 @@ const MainApp: React.FC = () => {
     });
   };
 
+  const getViewTitle = () => {
+    switch (activeView) {
+      case "my-day":
+        return "My Day";
+      case "tasks":
+        return "Tasks";
+      case "calendar":
+        return "Calendar";
+      case "notes":
+        return "Notes";
+      default:
+        return "My Day";
+    }
+  };
+
+  const navItems = [
+    {
+      id: "my-day",
+      icon: "☀️",
+      label: "My Day",
+      count: state.tasks.filter((t) => !t.completed).length,
+    },
+    { id: "calendar", icon: "📅", label: "Calendar", count: 2 },
+    { id: "tasks", icon: "📋", label: "Tasks", count: state.tasks.length },
+    { id: "notes", icon: "📝", label: "Notes", count: 4 },
+  ];
+
+  const projects = [
+    { id: "tech-upgrade", icon: "🔧", label: "Tech-Upgrade", count: 3 },
+    { id: "new-design", icon: "🎨", label: "New-Design", count: 3 },
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
-              <h1 className="text-xl font-semibold text-gray-900">
-                AI Task Manager
-              </h1>
-            </div>
-            <div className="flex items-center space-x-4">
-              <div className="text-sm text-gray-500">
-                {getCurrentDate()} • {getCurrentTime()}
+    <div className="flex h-screen bg-gray-900 text-white">
+      {/* Sidebar */}
+      <div
+        className={`${
+          sidebarCollapsed ? "w-16" : "w-72"
+        } bg-gray-800 transition-all duration-300 flex flex-col`}
+      >
+        {/* User Profile Header */}
+        <div className="p-4 border-b border-gray-700">
+          <div className="flex items-center space-x-3">
+            <UserProfile />
+            {!sidebarCollapsed && (
+              <div className="flex-1">
+                <h2 className="text-sm font-medium text-gray-300">
+                  Welcome back
+                </h2>
               </div>
-              <UserProfile />
-            </div>
+            )}
           </div>
         </div>
-      </header>
+
+        {/* Add Task Button */}
+        <div className="p-4">
+          <button
+            onClick={() => setActiveView("add-task")}
+            className="w-full flex items-center space-x-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+          >
+            <span>+</span>
+            {!sidebarCollapsed && <span>Add Task</span>}
+          </button>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 px-4 space-y-1">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveView(item.id)}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors ${
+                activeView === item.id
+                  ? "bg-gray-700 text-white"
+                  : "text-gray-300 hover:bg-gray-700 hover:text-white"
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <span className="text-lg">{item.icon}</span>
+                {!sidebarCollapsed && <span>{item.label}</span>}
+              </div>
+              {!sidebarCollapsed && item.count > 0 && (
+                <span className="text-xs bg-gray-600 px-2 py-1 rounded-full">
+                  {item.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {/* Projects Section */}
+        <div className="px-4 py-2">
+          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            {!sidebarCollapsed && "Projects"}
+          </h3>
+          <div className="space-y-1">
+            {projects.map((project) => (
+              <button
+                key={project.id}
+                onClick={() => setActiveView(project.id)}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors ${
+                  activeView === project.id
+                    ? "bg-gray-700 text-white"
+                    : "text-gray-300 hover:bg-gray-700 hover:text-white"
+                }`}
+              >
+                <div className="flex items-center space-x-3">
+                  <span className="text-lg">{project.icon}</span>
+                  {!sidebarCollapsed && <span>{project.label}</span>}
+                </div>
+                {!sidebarCollapsed && project.count > 0 && (
+                  <span className="text-xs bg-gray-600 px-2 py-1 rounded-full">
+                    {project.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* New List Button */}
+        <div className="p-4 border-t border-gray-700">
+          <button className="w-full flex items-center space-x-2 px-3 py-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors">
+            <span>+</span>
+            {!sidebarCollapsed && <span>New List</span>}
+          </button>
+        </div>
+      </div>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column - Agent Interaction */}
-          <div className="lg:col-span-1">
-            <AgentInteraction
-              onTasksGenerated={handleTasksGenerated}
-              isLoading={state.isLoading}
-            />
+      <div className="flex-1 flex flex-col">
+        {/* Header */}
+        <header className="bg-gray-800 border-b border-gray-700 px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 12h16M4 18h16"
+                  />
+                </svg>
+              </button>
+              <h1 className="text-2xl font-semibold">{getViewTitle()}</h1>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className="text-right">
+                <div className="text-lg font-medium">{getCurrentDate()}</div>
+                <div className="text-sm text-gray-400">{getCurrentTime()}</div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors">
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
+                    />
+                  </svg>
+                </button>
+                <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors">
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
+        </header>
 
-          {/* Right Column - Todo List */}
-          <div className="lg:col-span-2">
-            <TodoList
-              tasks={state.tasks}
-              onToggleTask={handleToggleTask}
-              onDeleteTask={handleDeleteTask}
-              onUpdateTaskText={handleTaskTextUpdate}
-              onUpdateTaskNotes={handleTaskNotesUpdate}
-            />
-          </div>
-        </div>
-      </main>
+        {/* Content Area */}
+        <main className="flex-1 overflow-auto">
+          {(activeView === "my-day" ||
+            activeView === "tasks" ||
+            activeView === "add-task") && (
+            <div className="p-6">
+              {/* Agent Interaction for adding tasks */}
+              {activeView === "add-task" && (
+                <div className="mb-8 max-w-3xl">
+                  <AgentInteraction
+                    onTasksGenerated={handleTasksGenerated}
+                    isLoading={state.isLoading}
+                  />
+                </div>
+              )}
+
+              {/* Task List */}
+              <div className="max-w-4xl">
+                <TodoList
+                  tasks={state.tasks}
+                  onToggleTask={handleToggleTask}
+                  onDeleteTask={handleDeleteTask}
+                  onUpdateTaskText={handleTaskTextUpdate}
+                  onUpdateTaskNotes={handleTaskNotesUpdate}
+                />
+              </div>
+            </div>
+          )}
+
+          {activeView === "calendar" && (
+            <div className="p-6">
+              <div className="text-center text-gray-400">
+                <h3 className="text-lg font-medium mb-2">Calendar View</h3>
+                <p>Calendar functionality coming soon</p>
+              </div>
+            </div>
+          )}
+
+          {activeView === "notes" && (
+            <div className="p-6">
+              <div className="text-center text-gray-400">
+                <h3 className="text-lg font-medium mb-2">Notes</h3>
+                <p>Notes functionality coming soon</p>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
 
       {/* Confirmation Modal */}
       {confirmModal.isVisible && (

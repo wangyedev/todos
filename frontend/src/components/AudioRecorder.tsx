@@ -243,13 +243,13 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
         onClick={toggleRecording}
         disabled={isDisabled}
         className={`
-          inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 shadow-lg hover:shadow-xl
+          inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 shadow-sm hover:shadow-md
           ${
             state.isRecording
               ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
               : isDisabled
-              ? "bg-gray-700 bg-opacity-50 text-gray-400 cursor-not-allowed"
-              : "bg-blue-500 hover:bg-blue-600 text-white hover:scale-105"
+              ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+              : "bg-blue-600 hover:bg-blue-700 text-white hover:scale-105"
           }
         `}
         aria-label={state.isRecording ? "Stop recording" : "Start recording"}
@@ -277,7 +277,7 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
 
       {state.error && (
         <div
-          className="mt-3 p-2 bg-red-600 bg-opacity-20 border border-red-500 border-opacity-30 rounded text-red-300 text-xs max-w-xs mx-auto"
+          className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-xs max-w-xs mx-auto"
           role="alert"
         >
           {state.error}
