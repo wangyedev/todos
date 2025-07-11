@@ -249,7 +249,7 @@ const MainApp: React.FC = () => {
       {/* Sidebar */}
       <div
         className={`${
-          sidebarCollapsed ? "w-16" : "w-72"
+          sidebarCollapsed ? "w-16" : "w-74"
         } bg-gray-800 transition-all duration-300 flex flex-col`}
       >
         {/* User Profile Header */}
