@@ -6,7 +6,7 @@ import AgentInteraction from "./components/AgentInteraction";
 import TodoList from "./components/TodoList";
 import ConfirmationModal from "./components/ConfirmationModal";
 import { Task, AppState } from "./types";
-import { apiService } from "./services/api";
+import { apiService, ApiError } from "./services/api";
 import "./App.css";
 
 const MainApp: React.FC = () => {
@@ -35,26 +35,26 @@ const MainApp: React.FC = () => {
     onConfirm: () => {},
   });
 
-  // Load tasks from database on mount
-  useEffect(() => {
-    const loadTasks = async () => {
-      try {
-        setState((prev) => ({ ...prev, isLoading: true }));
-        const tasks = await apiService.getAllTasks();
-        setState((prev) => ({ ...prev, tasks, isLoading: false }));
-      } catch (error) {
-        console.error("Failed to load tasks:", error);
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error:
-            error instanceof Error ? error.message : "Failed to load tasks",
-        }));
-      }
-    };
-
-    loadTasks();
+  // Load tasks from database
+  const loadTasks = useCallback(async () => {
+    try {
+      setState((prev) => ({ ...prev, isLoading: true }));
+      const tasks = await apiService.getAllTasks();
+      setState((prev) => ({ ...prev, tasks, isLoading: false }));
+    } catch (error) {
+      console.error("Failed to load tasks:", error);
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : "Failed to load tasks",
+      }));
+    }
   }, []);
+
+  // Load tasks on mount
+  useEffect(() => {
+    loadTasks();
+  }, [loadTasks]);
 
   const handleTasksGenerated = useCallback((newTasks: Task[]) => {
     setState((prev) => {
@@ -73,33 +73,44 @@ const MainApp: React.FC = () => {
     });
   }, []);
 
-  const handleDeleteTask = useCallback(async (taskId: string) => {
-    try {
-      // Delete from database
-      await apiService.deleteTask(taskId);
+  const handleDeleteTask = useCallback(
+    async (taskId: string) => {
+      try {
+        // Delete from database
+        await apiService.deleteTask(taskId);
 
-      // Update local state
-      setState((prev) => ({
-        ...prev,
-        tasks: prev.tasks
-          .map((task) => {
-            // If deleting a subtask, remove it from the parent's subtasks array
-            if (task.subtasks) {
-              return {
-                ...task,
-                subtasks: task.subtasks.filter(
-                  (subtask) => subtask.id !== taskId
-                ),
-              };
-            }
-            return task;
-          })
-          .filter((task) => task.id !== taskId), // Remove parent tasks
-      }));
-    } catch (error) {
-      console.error("Failed to delete task:", error);
-    }
-  }, []);
+        // Update local state
+        setState((prev) => ({
+          ...prev,
+          tasks: prev.tasks
+            .map((task) => {
+              // If deleting a subtask, remove it from the parent's subtasks array
+              if (task.subtasks) {
+                return {
+                  ...task,
+                  subtasks: task.subtasks.filter(
+                    (subtask) => subtask.id !== taskId
+                  ),
+                };
+              }
+              return task;
+            })
+            .filter((task) => task.id !== taskId), // Remove parent tasks
+        }));
+      } catch (error) {
+        console.error("Failed to delete task:", error);
+
+        // If the task doesn't exist in the database (404), refresh tasks from backend
+        if (error instanceof ApiError && error.status === 404) {
+          console.log(
+            "Task not found in database, refreshing tasks from backend"
+          );
+          loadTasks();
+        }
+      }
+    },
+    [loadTasks]
+  );
 
   const handleToggleTask = useCallback(
     async (taskId: string) => {
@@ -113,54 +124,26 @@ const MainApp: React.FC = () => {
         const taskToToggle = task || subtask;
         if (!taskToToggle) return;
 
-        // Update in database
+        // Update in database - backend handles parent-subtask logic
         await apiService.updateTaskCompletion(taskId, !taskToToggle.completed);
 
-        // Update local state
-        setState((prev) => ({
-          ...prev,
-          tasks: prev.tasks.map((task) => {
-            // If toggling a parent task, toggle all its subtasks
-            if (task.id === taskId) {
-              const newCompleted = !task.completed;
-              return {
-                ...task,
-                completed: newCompleted,
-                subtasks: task.subtasks?.map((subtask) => ({
-                  ...subtask,
-                  completed: newCompleted,
-                })),
-              };
-            }
-
-            // If toggling a subtask, update it within the parent
-            if (task.subtasks) {
-              const updatedSubtasks = task.subtasks.map((subtask) =>
-                subtask.id === taskId
-                  ? { ...subtask, completed: !subtask.completed }
-                  : subtask
-              );
-
-              // Check if this subtask toggle affects the parent
-              const hasUpdatedSubtask = task.subtasks.some(
-                (s) => s.id === taskId
-              );
-              if (hasUpdatedSubtask) {
-                return {
-                  ...task,
-                  subtasks: updatedSubtasks,
-                };
-              }
-            }
-
-            return task;
-          }),
-        }));
+        // Refresh tasks from backend to get the correct state
+        // This ensures frontend stays in sync with backend logic
+        await loadTasks();
       } catch (error) {
         console.error("Failed to toggle task:", error);
+
+        // If the task doesn't exist in the database (404), refresh tasks from backend
+        if (error instanceof ApiError && error.status === 404) {
+          console.log(
+            "Task not found in database, refreshing tasks from backend"
+          );
+          // Refresh tasks from backend to sync local state
+          loadTasks();
+        }
       }
     },
-    [state.tasks]
+    [state.tasks, loadTasks]
   );
 
   const handleTaskTextUpdate = useCallback(
@@ -195,46 +178,17 @@ const MainApp: React.FC = () => {
         }));
       } catch (error) {
         console.error("Failed to update task text:", error);
+
+        // If the task doesn't exist in the database (404), refresh tasks from backend
+        if (error instanceof ApiError && error.status === 404) {
+          console.log(
+            "Task not found in database, refreshing tasks from backend"
+          );
+          loadTasks();
+        }
       }
     },
-    []
-  );
-
-  const handleTaskNotesUpdate = useCallback(
-    async (taskId: string, newNotes: string) => {
-      try {
-        // Update in database
-        await apiService.updateTaskNotes(taskId, newNotes);
-
-        // Update local state
-        setState((prev) => ({
-          ...prev,
-          tasks: prev.tasks.map((task) => {
-            // Update parent task
-            if (task.id === taskId) {
-              return { ...task, notes: newNotes };
-            }
-
-            // Update subtask
-            if (task.subtasks) {
-              return {
-                ...task,
-                subtasks: task.subtasks.map((subtask) =>
-                  subtask.id === taskId
-                    ? { ...subtask, notes: newNotes }
-                    : subtask
-                ),
-              };
-            }
-
-            return task;
-          }),
-        }));
-      } catch (error) {
-        console.error("Failed to update task notes:", error);
-      }
-    },
-    []
+    [loadTasks]
   );
 
   const closeConfirmation = () => {
@@ -477,7 +431,6 @@ const MainApp: React.FC = () => {
                   onToggleTask={handleToggleTask}
                   onDeleteTask={handleDeleteTask}
                   onUpdateTaskText={handleTaskTextUpdate}
-                  onUpdateTaskNotes={handleTaskNotesUpdate}
                 />
               </div>
             </div>

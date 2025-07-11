@@ -871,7 +871,11 @@ app.put(
         return;
       }
 
-      const success = TaskRepository.updateTaskCompletion(id, completed);
+      const success = TaskRepository.updateTaskCompletionWithLogic(
+        id,
+        completed,
+        req.user!.id
+      );
       if (!success) {
         res
           .status(500)

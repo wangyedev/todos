@@ -254,6 +254,72 @@ export class TaskRepository {
     return result.changes > 0;
   }
 
+  // Update task completion with parent-subtask logic
+  static updateTaskCompletionWithLogic(
+    id: string,
+    completed: boolean,
+    userId: string
+  ): boolean {
+    const transaction = db.transaction(() => {
+      // Get the task to determine if it's a parent or subtask
+      const task = this.getUserTaskById(id, userId);
+      if (!task) return false;
+
+      // If it's a parent task, handle parent-specific logic
+      if (task.isParent && task.subtasks) {
+        if (completed) {
+          // Completing a Parent Task → All subtasks should be marked as complete
+          // First complete the parent
+          const parentResult = updateTaskStmt.run(1, id);
+          if (parentResult.changes === 0) return false;
+
+          // Then complete all subtasks
+          for (const subtask of task.subtasks) {
+            const subtaskResult = updateTaskStmt.run(1, subtask.id);
+            if (subtaskResult.changes === 0) return false;
+          }
+        } else {
+          // Uncompleting a Parent Task → Only the parent task is affected; subtasks remain unchanged
+          const parentResult = updateTaskStmt.run(0, id);
+          if (parentResult.changes === 0) return false;
+          // Subtasks are left unchanged as requested
+        }
+      } else {
+        // For subtasks or standalone tasks, update normally
+        const mainResult = updateTaskStmt.run(completed ? 1 : 0, id);
+        if (mainResult.changes === 0) return false;
+
+        // If it's a subtask, auto-update parent based on ALL subtasks
+        if (!task.isParent && task.parentId) {
+          const parentTask = this.getUserTaskById(task.parentId, userId);
+          if (!parentTask || !parentTask.subtasks) return false;
+
+          // IMPORTANT: Get fresh subtask data after our update
+          // The parentTask.subtasks contains stale data from before our update
+          const freshParentTask = this.getUserTaskById(task.parentId, userId);
+          if (!freshParentTask || !freshParentTask.subtasks) return false;
+
+          // All Subtasks Completed → Automatically mark the parent task as completed
+          // Any Subtask Uncompleted → Automatically uncomplete the parent task
+          const allSubtasksCompleted = freshParentTask.subtasks.every(
+            (subtask) => subtask.completed
+          );
+
+          // Auto-update parent completion status based on subtasks
+          const parentResult = updateTaskStmt.run(
+            allSubtasksCompleted ? 1 : 0,
+            parentTask.id
+          );
+          if (parentResult.changes === 0) return false;
+        }
+      }
+
+      return true;
+    });
+
+    return transaction();
+  }
+
   // Update task text
   static updateTaskText(id: string, text: string): boolean {
     const result = updateTaskTextStmt.run(text, id);

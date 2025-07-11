@@ -1,14 +1,12 @@
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import { Task } from "../types";
 import TextRefinementTooltip from "./TextRefinementTooltip";
-import NotesRefinementTooltip from "./NotesRefinementTooltip";
 
 interface TodoListProps {
   tasks: Task[];
   onDeleteTask: (id: string) => void;
   onToggleTask: (id: string) => void;
   onUpdateTaskText: (id: string, newText: string) => void;
-  onUpdateTaskNotes: (id: string, newNotes: string) => void;
 }
 
 const TodoList: React.FC<TodoListProps> = ({
@@ -16,7 +14,6 @@ const TodoList: React.FC<TodoListProps> = ({
   onDeleteTask,
   onToggleTask,
   onUpdateTaskText,
-  onUpdateTaskNotes,
 }) => {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -103,10 +100,9 @@ const TodoList: React.FC<TodoListProps> = ({
   };
 
   const isParentCompleted = (task: Task) => {
-    return (
-      task.completed ||
-      (task.subtasks && task.subtasks.every((st) => st.completed))
-    );
+    // Backend now handles parent-subtask completion logic correctly
+    // So we can simply return the task's completion status
+    return task.completed;
   };
 
   const getStatusBadge = (task: Task) => {
