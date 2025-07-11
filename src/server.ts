@@ -422,12 +422,24 @@ interface MulterRequest extends Request {
   file?: Express.Multer.File | undefined;
 }
 
+interface AuthenticatedMulterRequest extends MulterRequest {
+  user?: {
+    id: string;
+    email: string;
+    name?: string;
+    avatarUrl?: string;
+    provider?: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+}
+
 // POST /api/transcribe-voice
 app.post(
   "/api/transcribe-voice",
   authenticateUser,
   upload.single("audio"),
-  async (req: MulterRequest, res: Response): Promise<void> => {
+  async (req: AuthenticatedMulterRequest, res: Response): Promise<void> => {
     try {
       if (!req.file) {
         res
@@ -497,10 +509,22 @@ app.post(
         const tasks = await generateTasksFromText(text);
 
         // Save tasks to database with user ID
-        const tasksWithUserId = tasks.map((task) => ({
-          ...task,
-          userId: req.user!.id,
-        }));
+        const tasksWithUserId = tasks.map((task) => {
+          const taskWithUserId = {
+            ...task,
+            userId: req.user!.id,
+          };
+
+          // Add userId to subtasks if they exist
+          if (task.subtasks && task.subtasks.length > 0) {
+            taskWithUserId.subtasks = task.subtasks.map((subtask) => ({
+              ...subtask,
+              userId: req.user!.id,
+            }));
+          }
+
+          return taskWithUserId;
+        });
         const savedTasks =
           TaskRepository.createTasksWithSubtasks(tasksWithUserId);
         res.json(savedTasks);
@@ -639,8 +663,25 @@ app.post(
         // Use the shared function to generate tasks
         const tasks = await generateTasksFromText(fullTranscription);
 
-        // Save tasks to database
-        const savedTasks = TaskRepository.createTasksWithSubtasks(tasks);
+        // Save tasks to database with user ID
+        const tasksWithUserId = tasks.map((task) => {
+          const taskWithUserId = {
+            ...task,
+            userId: (req as AuthenticatedMulterRequest).user!.id,
+          };
+
+          // Add userId to subtasks if they exist
+          if (task.subtasks && task.subtasks.length > 0) {
+            taskWithUserId.subtasks = task.subtasks.map((subtask) => ({
+              ...subtask,
+              userId: (req as AuthenticatedMulterRequest).user!.id,
+            }));
+          }
+
+          return taskWithUserId;
+        });
+        const savedTasks =
+          TaskRepository.createTasksWithSubtasks(tasksWithUserId);
 
         // Send completion with all tasks at once
         res.write(

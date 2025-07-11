@@ -388,6 +388,7 @@ const TodoList: React.FC<TodoListProps> = ({
     icon?: string;
     isCollapsible?: boolean;
   }) => {
+    // For completed tasks, start expanded so users can see their completed subtasks
     const [isCollapsed, setIsCollapsed] = useState(false);
 
     if (tasks.length === 0) return null;
